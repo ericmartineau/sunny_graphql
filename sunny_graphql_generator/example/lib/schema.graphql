@@ -1,0 +1,220 @@
+""" Indicates that this property should be fetched by default"""
+directive @eager on FIELD_DEFINITION
+
+""" Explicitly marks this as a db entity """
+directive @entity on OBJECT
+
+""" Indicates that when this property is encountered, it should be flattened into its parent"""
+directive @flatten on FIELD_DEFINITION
+
+""" Indicates that this property should not be included by default"""
+directive @lazy on FIELD_DEFINITION
+
+directive @named(name: String!) on FIELD_DEFINITION
+
+""" Indicates this entity should use an alternate form"""
+directive @partial(name: String!) on ARGUMENT_DEFINITION
+
+enum FamilyMemberType {
+  PARENT
+  CHILD
+}
+
+enum RelatableType {
+  CONTACT
+  ORG
+}
+
+scalar FlexiDate
+
+scalar Timestamp
+
+scalar URI
+
+interface IRef {
+  id: ID!
+  displayName: String!
+  photoUrl: URI
+}
+
+interface TribeMemberDetails @relationshipProperties {
+  joined: Boolean @default(value: false)
+  requested: Boolean @default(value: false)
+  role: String
+  isAdmin: Boolean @default(value: false)
+  dateCreated: Timestamp @timestamp(operations: [CREATE]) @readonly
+  dateModified: Timestamp @timestamp(operations: [CREATE, UPDATE]) @readonly
+}
+
+type Contact implements IRef @entity {
+  id: ID! @id
+  displayName: String!
+  nickName: String
+  photoUrl: URI
+  birthday: FlexiDate
+  dateModified: Timestamp @timestamp(operations: [UPDATE, CREATE]) @readonly
+  dateCreated: Timestamp @timestamp(operations: [CREATE]) @readonly
+  tribes: [Tribe!]! @named(name: "TribeMembership") @lazy @readonly @relationship(type: "MEMBER", direction: IN, properties: "TribeMemberDetails")
+  phases: [Phase!]! @eager @relationship(type: "PHASE", direction: OUT)
+  childFamily: FamilyTribe @lazy @relationship(type: "CHILD", direction: IN)
+  parentFamily: FamilyTribe @lazy @relationship(type: "PARENT", direction: IN)
+  friendGroups: [FriendGroupTribe!] @lazy @relationship(direction: OUT, type: "FRIEND")
+}
+
+fragment ContactFragment on Contact {
+  id
+  displayName
+  photoUrl
+  nickName
+  birthday
+  dateCreated
+  dateModified
+}
+
+fragment FamilyFragment on FamilyTribe {
+  id
+  startDate
+  endDate
+  tribe {
+    ...TribeFragment
+  }
+  parents {
+    ...ContactFragment
+  }
+  children {
+    ...ContactFragment
+  }
+}
+
+type FamilyTribe @entity {
+  id: ID! @id
+  tribe: Tribe! @eager @relationship(direction: OUT, type: "FAMILY_TRIBE")
+  startDate: FlexiDate
+  endDate: FlexiDate
+  parents: [Contact!]! @eager @relationship(type: "PARENT", direction: OUT)
+  children: [Contact!]! @eager @relationship(type: "CHILD", direction: OUT)
+}
+
+fragment FamilyTribeFragment on FamilyTribe {
+  id
+  startDate
+  endDate
+  children {
+    ...ContactFragment
+  }
+  parents {
+    ...ContactFragment
+  }
+  tribe {
+    id
+    displayName
+    photoUrl
+    slug
+    tribeType
+  }
+}
+
+fragment FriendGroupFragment on FriendGroupTribe {
+  id
+  tribe {
+    ...TribeFragment
+  }
+  friends {
+    ...ContactFragment
+  }
+}
+
+type FriendGroupTribe @entity {
+  id: ID! @id
+  tribe: Tribe! @eager @flatten @relationship(direction: OUT, type: "FRIEND_GROUP_TRIBE")
+  friends: [Contact!]! @eager @relationship(direction: IN, type: "FRIEND")
+}
+
+type Mutation {
+  version: String
+}
+
+type Phase implements IRef @entity {
+  id: ID! @id
+  phased: HasPhases! @eager @relationship(type: "PHASE", direction: IN)
+  displayName: String!
+  photoUrl: URI
+  startDate: FlexiDate
+  endDate: FlexiDate
+  description: String
+  dateCreated: Timestamp! @readonly @timestamp(operations: [CREATE])
+  dateModified: Timestamp! @readonly @timestamp(operations: [CREATE, UPDATE])
+}
+
+fragment PhaseFragment on Phase {
+  id
+  displayName
+  photoUrl
+  startDate
+  endDate
+  dateCreated
+  dateModified
+  description
+  phased {
+    __typename
+    ... on IRef {
+      id
+      displayName
+      photoUrl
+    }
+  }
+}
+
+type Query {
+  version: String
+}
+
+type Tribe implements IRef @entity {
+  id: ID! @id(autogenerate: false)
+  displayName: String!
+  photoUrl: URI
+  slug: String!
+  tribeType: String!
+  dateModified: Timestamp @timestamp(operations: [UPDATE, CREATE]) @readonly
+  dateCreated: Timestamp @timestamp(operations: [CREATE]) @readonly
+  members: [Contact!]! @named(name: "TribeMember") @eager @relationship(direction: OUT, type: "MEMBER", properties: "TribeMemberDetails")
+  phases: [Phase!]! @eager @relationship(type: "PHASE", direction: OUT)
+}
+
+type UserContact @entity {
+  id: ID! @id(autogenerate: false)
+  contact: Contact! @eager @flatten @relationship(type: "USER", direction: OUT)
+  username: String
+  firebaseUid: String
+  email: String
+  phone: String
+}
+
+union HasPhases = Contact | Tribe
+
+fragment TribeFragment on Tribe {
+  id
+  displayName
+  photoUrl
+  dateCreated
+  dateModified
+  slug
+  tribeType
+  phases {
+    ...PhaseFragment
+  }
+  members {
+    ...ContactFragment
+  }
+}
+
+fragment UserContactFragment on UserContact {
+  id
+  contact {
+    ...ContactFragment
+  }
+  email
+  firebaseUid
+  phone
+  username
+}

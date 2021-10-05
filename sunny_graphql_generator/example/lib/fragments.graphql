@@ -1,0 +1,124 @@
+#
+#fragment FamilyFragment on Family {
+#    id
+#    displayName
+#    photoUrl
+#    tribeType
+#    startDate
+#    endDate
+#    parents {
+#        ...ContactFragment
+#    }
+#    children {
+#        ...ContactFragment
+#    }
+#}
+#
+#fragment ContactFragment on Contact {
+#    id
+#    displayName
+#    photoUrl
+#    nickName
+#}
+#
+#fragment FamilyMemberFragment on FamilyMember {
+#    contact {
+#        id
+#        displayName
+#        photoUrl
+#    }
+#    family {
+#        id
+#        displayName
+#        photoUrl
+#    }
+#    type
+#    __typename
+#}
+#
+#fragment TribeFragment on Tribe {
+#    id
+#    displayName
+#    photoUrl
+#    members {
+#        contactName
+#        contactPhoto
+#        id
+#        isAdmin
+#        relType
+#    }
+#    slug
+#    tribeType
+#}
+#
+#fragment ContactProfileFragment on ContactProfile {
+#    id
+#    displayName
+#    photoUrl
+#    birthday
+#    nickName
+#}
+#
+#fragment FriendGroupFragment on FriendGroup {
+#    id
+#    displayName
+#    photoUrl
+#    friends {
+#        ...ContactFragment
+#    }
+#    tribeType
+#}
+#
+#fragment TribeSearchResultFragment on TribeSearchResult {
+#    displayName
+#    id
+#    isAdmin
+#    photoUrl
+#    relType
+#    tribeType
+#}
+#
+#fragment TribeInfoFragment on TribeInfo {
+#    id
+#    displayName
+#    photoUrl
+#    slug
+#    tribeType
+#}
+#
+#fragment TribeMemberFragment on TribeMember {
+#    id
+#    isAdmin
+#    joined
+#    requested
+#    member {
+#        ...ContactFragment
+#    }
+#    tribe {
+#        id
+#        displayName
+#        photoUrl
+#        slug
+#        tribeType
+#    }
+#    role
+#    dateCreated
+#    dateModified
+#}
+#
+#fragment RefFragment on Ref {
+#    id
+#    displayName
+#    photoUrl
+#}
+#
+#fragment UserFragment on User {
+#    id
+#    displayName
+#    photoUrl
+#    email
+#    firebaseUid
+#    nickName
+#    phone
+#    username
+#}

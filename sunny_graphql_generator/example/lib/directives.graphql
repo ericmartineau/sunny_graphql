@@ -1,0 +1,68 @@
+enum GraphDirection { IN OUT }
+directive @relationship(
+    type: String!
+    direction: GraphDirection!
+    properties: String
+)  on FIELD_DEFINITION
+
+directive @cypher(statement: String!) on FIELD_DEFINITION
+
+"""Indicates that the field is the unique identifier for the object type, and additionally enables the autogeneration of IDs."""
+directive @id(autogenerate: Boolean! = true) on FIELD_DEFINITION
+
+enum ExcludeOperation {
+    CREATE
+    READ
+    UPDATE
+    DELETE
+}
+
+"""Instructs @neo4j/graphql to exclude the specified operations from query and mutation generation. If used without an argument, no queries or mutations will be generated for this type."""
+directive @exclude( operations: [ExcludeOperation!]! = [CREATE, READ, UPDATE, DELETE] ) on OBJECT
+
+"""Instructs @neo4j/graphql to completely ignore a field definition, assuming that it will be fully accounted for by custom resolvers."""
+directive @ignore on FIELD_DEFINITION
+
+"""Syntactic sugar to help differentiate between interfaces for relationship properties, and otherwise."""
+directive @relationshipProperties on INTERFACE
+
+enum TimestampOperation {
+    CREATE
+    UPDATE
+}
+
+"""Instructs @neo4j/graphql to generate timestamps on particular events, which will be available as the value of the specified field."""
+directive @timestamp(
+    """Which events to generate timestamps on. Defaults to both create and update."""
+    operations: [TimestampOperation!]! = [CREATE, UPDATE]
+) on FIELD_DEFINITION
+
+"""Instructs @neo4j/graphql to only include a field in the generated input types for the object type within which the directive is applied, but exclude it from the object type itself."""
+directive @writeonly on FIELD_DEFINITION
+
+"""Instructs @neo4j/graphql to only include a field in generated input type for creating, and in the object type within which the directive is applied."""
+directive @readonly on FIELD_DEFINITION
+
+"""Instructs @neo4j/graphql to only expose a field through the Neo4j GraphQL OGM."""
+directive @private on FIELD_DEFINITION
+
+"""Instructs @neo4j/graphql to set the specified value as the default value in the CreateInput type for the object type in which this directive is used."""
+directive @default(
+    """The default value to use. Must be a scalar type and must match the type of the field with which this directive decorates."""
+    value: Scalar!,
+) on FIELD_DEFINITION
+
+"""Int | Float | String | Boolean | ID | DateTime"""
+scalar Scalar
+
+"""Instructs @neo4j/graphql to wrap the property in a coalesce() function during queries, using the single value specified."""
+directive @coalesce(
+    """The value to use in the coalesce() function. Must be a scalar type and must match the type of the field with which this directive decorates."""
+    value: Scalar!,
+) on FIELD_DEFINITION
+
+""" Indicates that this property should be included by default"""
+directive @include on FIELD_DEFINITION
+
+""" Indicates that this property should not be included by default"""
+directive @lazy on FIELD_DEFINITION

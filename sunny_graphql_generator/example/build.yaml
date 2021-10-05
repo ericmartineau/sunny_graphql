@@ -1,0 +1,23 @@
+targets:
+  $default:
+    builders:
+#      gql_build|schema_builder:
+#        enabled: false
+#      gql_build|ast_builder:
+#        enabled: false
+#      gql_build|data_builder:
+#        enabled: false
+#        options:
+#          schema: example|lib/schema.graphql
+#      gql_build|var_builder:
+#        enabled: false
+#        options:
+#          schema: example|lib/schema.graphql
+#      gql_build|serializer_builder:
+#        enabled: false
+#        options:
+#          schema: example|lib/schema.graphql
+#      ferry_generator|req_builder:
+#        enabled: false
+#        options:
+#          schema: example|lib/schema.graphql
