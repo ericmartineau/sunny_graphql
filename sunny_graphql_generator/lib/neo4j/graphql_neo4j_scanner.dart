@@ -11,8 +11,8 @@ import 'package:source_gen/source_gen.dart';
 import 'package:sunny_graphql_generator/graphql_entity.dart';
 import 'package:sunny_graphql_generator/sunny_graphql_model.dart';
 
-import 'shared.dart';
-import 'shared.dart' as shared;
+import '../shared.dart';
+import '../shared.dart' as shared;
 
 final _log = Logger('graphQLScanner');
 
@@ -56,59 +56,6 @@ class GraphQLNeo4Model {
       typeNameMappers: typeNameMappers,
     );
 
-    void addEntity(GraphQLEntity entity) {
-      final name = entity.name;
-
-      final objectDefinition =
-          model.doc.definitions.whereType<ObjectTypeDefinitionNode>().where((element) => element.name.value == entity.name).first;
-
-      model.objectTypes[entity.name] = objectDefinition;
-      model.addFragment(model.doc.findFragment("${objectDefinition.name.value}Fragment"));
-
-      objectDefinition.fields.forEach((fieldDefinition) {
-        final eField = entity.getField(fieldDefinition.name.value);
-
-        model.addType(eField.typeNode, parentType: objectDefinition.name.value);
-      });
-
-      model.addDefinition(
-          InputObjectTypeDefinitionNode(name: NameNode(value: '${name}CreateInput'), fields: [
-            for (var field in entity.fields)
-              if (field.canCreate)
-                if (field.isRelationship)
-                  InputValueDefinitionNode(
-                    name: NameNode(value: field.name),
-                    type: NamedTypeNode(
-                      name: NameNode(
-                        value: field.relationRefType(),
-                      ),
-                    ),
-                  )
-                else
-                  InputValueDefinitionNode(
-                    name: NameNode(value: field.name),
-                    type: field.typeNode,
-                  ),
-          ]),
-          forceInclude: true);
-      model.addDefinition(
-          InputObjectTypeDefinitionNode(name: NameNode(value: '${name}UpdateInput'), fields: [
-            for (var field in entity.fields)
-              if (field.canUpdate)
-                if (field.isRelationship)
-                  InputValueDefinitionNode(
-                    name: NameNode(value: field.name),
-                    type: NamedTypeNode(name: NameNode(value: field.relationRefType())),
-                  )
-                else
-                  InputValueDefinitionNode(
-                    name: NameNode(value: field.name),
-                    type: field.typeNode,
-                  ),
-          ]),
-          forceInclude: true);
-    }
-
     model.doc.definitions
         .whereType<ObjectTypeDefinitionNode>()
         .where((def) => def.directives.any((element) => element.name.value == 'entity'))
@@ -116,13 +63,21 @@ class GraphQLNeo4Model {
       var name = def.name.value;
       var entity = GraphQLEntity(name);
       var ops = {...GraphOpType.values};
-      def.directives.where((element) => element.name.value == 'exclude').forEach((exclude) {
+      final exclude = def.directives.getDirective('exclude');
+      if (exclude != null) {
         if (exclude.arguments.isEmpty) {
           ops.removeAll(GraphOpType.values);
         } else {
           exclude.arguments.forEach((arg) {});
         }
-      });
+      }
+
+      final mixinNames = def.directives.getStrings("mixin", "name");
+      final serviceMixinNames = def.directives.getStrings("mixin", "api");
+      final serviceInterfaceNames = def.directives.getStrings("interfaces", "api");
+      entity.mixins.addAll(mixinNames);
+      entity.serviceMixins.addAll(serviceMixinNames);
+      entity.serviceInterfaces.addAll(serviceInterfaceNames);
 
       entity.ops.addAll(ops);
       entity.fields.addAll(def.fields.map((fieldDefinition) {
@@ -203,11 +158,64 @@ class GraphQLNeo4Model {
 
       def.fields.clear();
       def.fields.addAll(mappedFields);
-      addEntity(entity);
+      neo4jModel._addEntity(entity);
       neo4jModel.entities[entity.name] = entity;
     });
 
     return neo4jModel;
+  }
+
+  void _addEntity(GraphQLEntity entity) {
+    final name = entity.name;
+
+    final objectDefinition =
+        model.doc.definitions.whereType<ObjectTypeDefinitionNode>().where((element) => element.name.value == entity.name).first;
+
+    model.objectTypes[entity.name] = objectDefinition;
+    model.addFragment(model.doc.findFragment("${objectDefinition.name.value}Fragment"));
+
+    objectDefinition.fields.forEach((fieldDefinition) {
+      final eField = entity.getField(fieldDefinition.name.value);
+
+      model.addType(eField.typeNode, parentType: objectDefinition.name.value);
+    });
+
+    model.addDefinition(
+        InputObjectTypeDefinitionNode(name: NameNode(value: '${name}CreateInput'), fields: [
+          for (var field in entity.fields)
+            if (field.canCreate)
+              if (field.isRelationship)
+                InputValueDefinitionNode(
+                  name: NameNode(value: field.name),
+                  type: NamedTypeNode(
+                    name: NameNode(
+                      value: field.relationRefType(),
+                    ),
+                  ),
+                )
+              else
+                InputValueDefinitionNode(
+                  name: NameNode(value: field.name),
+                  type: field.typeNode,
+                ),
+        ]),
+        forceInclude: true);
+    model.addDefinition(
+        InputObjectTypeDefinitionNode(name: NameNode(value: '${name}UpdateInput'), fields: [
+          for (var field in entity.fields)
+            if (field.canUpdate)
+              if (field.isRelationship)
+                InputValueDefinitionNode(
+                  name: NameNode(value: field.name),
+                  type: NamedTypeNode(name: NameNode(value: field.relationRefType())),
+                )
+              else
+                InputValueDefinitionNode(
+                  name: NameNode(value: field.name),
+                  type: field.typeNode,
+                ),
+        ]),
+        forceInclude: true);
   }
 }
 

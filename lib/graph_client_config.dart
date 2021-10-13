@@ -18,7 +18,8 @@ class GraphClientConfig {
     _serializer = serializer ?? _serializer;
   }
 
-  static initGetter(GraphQLClientGetter client, {
+  static initGetter(
+    GraphQLClientGetter client, {
     GraphSerializer? serializer,
   }) {
     _client = client;
@@ -37,13 +38,31 @@ class GraphClientConfig {
     return _serializer!.write(input, typeName: typeName, isList: isList);
   }
 
+  static double? doubleOf(json) {
+    if (json == null) return null;
+    if (json is double) {
+      return json;
+    } else if (json is num) {
+      return json.toDouble();
+    }
+  }
+
+  static int? intOf(json) {
+    if (json == null) return null;
+    if (json is int) {
+      return json;
+    } else if (json is num) {
+      return json.toInt();
+    }
+  }
+
   ///
   /// Retrieves a
   static getDeep(json, [f1, f2, f3]) {
     var res = json;
     if (json == null) return null;
 
-    for (var f in [if(f1 != null)f1, if(f2 != null) f2, if(f3 != null)f3]) {
+    for (var f in [if (f1 != null) f1, if (f2 != null) f2, if (f3 != null) f3]) {
       try {
         res = res?[f];
       } catch (e) {

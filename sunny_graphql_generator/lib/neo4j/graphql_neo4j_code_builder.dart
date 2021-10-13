@@ -2,12 +2,12 @@ import 'package:code_builder/code_builder.dart';
 import 'package:dartxx/dartxx.dart';
 import 'package:logging/logging.dart';
 import 'package:sunny_graphql_generator/code_builder.dart';
-import 'package:sunny_graphql_generator/graphql_neo4j_scanner.dart';
+import 'package:sunny_graphql_generator/neo4j/graphql_neo4j_scanner.dart';
 import 'package:sunny_graphql_generator/graphql_scanner_code_builder.dart';
 
-import 'graphql_entity.dart';
-import 'shared_code_builders.dart';
-import 'shared.dart';
+import '../graphql_entity.dart';
+import '../shared_code_builders.dart';
+import '../shared.dart';
 
 final _log = Logger('graphql_generator');
 final IdParameter = Parameter(
@@ -23,7 +23,7 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
   model.model.addAllModels(
     code,
     inputGenerator: (c, name, fields, isAbstract) {
-      c.implements.add(refer('GraphInput'));
+      c.mixins.add(refer('GraphInputMixin'));
     },
     extraGenerator: (c, name, fields, isAbstract) {
       c.extend = refer('BaseSunnyEntity');
@@ -33,11 +33,6 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
         ..modifier = FieldModifier.constant
         ..assignment =
             Code('MSchemaRef("mverse", "${model.moduleName.uncapitalize()}", "${name.uncapitalize()}", "1.0.0", "mvext")')));
-      c.methods.add(Method((f) => f
-        ..name = 'mtype'
-        ..type = MethodType.getter
-        ..returns = refer('MSchemaRef')
-        ..body = Code('return ref;')));
     },
   );
 
@@ -48,8 +43,8 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
       """
   final ${entity.name}CreateOp = gql(r\"\"\"
     mutation create${entity.name}(\$input: ${entity.name}CreateInput!) {
-      create${entity.name}s(input: [\$input]) {
-        ${entity.name.uncapitalize()}s {
+      create${entity.namePlural}(input: [\$input]) {
+        ${entity.namePlural.uncapitalize()} {
           ...${entity.name}Fragment,
         }
       }
@@ -65,9 +60,9 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
                                   \$disconnect: ${entity.name}DisconnectInput,
                                   \$delete: ${entity.name}DeleteInput,
                                   ) {
-      update${entity.name}s(where: {id: \$id}, update: \$update, create: \$create, 
+      update${entity.namePlural}(where: {id: \$id}, update: \$update, create: \$create, 
                             connect: \$connect, disconnect: \$disconnect, delete: \$delete) {
-        ${entity.name.uncapitalize()}s {
+        ${entity.namePlural.uncapitalize()} {
           ...${entity.name}Fragment,
         }
       }
@@ -77,7 +72,7 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
       """
   final ${entity.name}DeleteOp = gql(r\"\"\"
     mutation delete${entity.name}(\$id: ID!) {
-      delete${entity.name}s(where: {id: \$id}) {
+      delete${entity.namePlural}(where: {id: \$id}) {
         nodesDeleted
       }
     }
@@ -86,7 +81,7 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
       """
   final ${entity.name}ListOp = gql(r\"\"\"
     query list${entity.name}(\$where: ${entity.name}Where!) {
-      ${entity.name.uncapitalize()}s(where: \$where) {
+      ${entity.namePlural.uncapitalize()}(where: \$where) {
         ...${entity.name}Fragment
       }
     }
@@ -95,7 +90,7 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
       """
   final ${entity.name}LoadOp = gql(r\"\"\"
     query load${entity.name}(\$id: ID!) {
-      ${entity.name.uncapitalize()}s(where: {id: \$id}) {
+      ${entity.namePlural.uncapitalize()}(where: {id: \$id}) {
         ...${entity.name}Fragment
       }
     }
@@ -103,15 +98,18 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
       "",
       """
   final ${entity.name}CountOp = gql(r\"\"\"
-    query count${entity.name}s {
-      ${entity.name.uncapitalize()}sCount
+    query count${entity.namePlural} {
+      ${entity.namePlural.uncapitalize()}Count
     }
   \"\"\");""",
     ];
+
     code += Class((c) => c
       ..name = '${objName.capitalize()}Api'
       ..extend =
           refer("GraphApi<${objName.capitalize()}, ${objName.capitalize()}CreateInput, ${objName.capitalize()}UpdateInput>")
+      ..mixins.addAll(entity.serviceMixins.map(refer))
+      ..implements.addAll(entity.serviceInterfaces.map(refer))
       ..constructors.add(Constructor((c) => c
         ..requiredParameters.addAll([
           Parameter((p) => p
@@ -155,7 +153,7 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
         for (var sub in entity.fields.lazy)
           Method(
             (m) => m
-              ..name = 'load${sub.name.capitalize()}For${entity.name}'
+              ..name = 'load${sub.name.capitalize()}ForRecord'
               ..returns = refer(sub.nullableDartTypeName).future()
               ..requiredParameters.add(IdParameter)
               ..body = Code(

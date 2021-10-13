@@ -18,18 +18,19 @@ dependencies:
   #  dartx: ^0.5.0
   pedantic: ^1.11.1
   uri: ^1.0.0
-  sunny_sdk_core: ^2.0.0+11
-
+  sunny_sdk_core: ^2.0.0+15
+  inflection3: ^0.5.3+2
   flutter:
     sdk: flutter
   graphql_flutter: ^5.0.0
-#  sunny_sdk_core: ^2.0.0+10
   gql: ^0.13.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
+dependency_overrides:
+  sunny_sdk_core:
+    path: ../sunny_sdk_core
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

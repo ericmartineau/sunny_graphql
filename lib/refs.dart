@@ -3,7 +3,7 @@ import 'package:sunny_sdk_core/mverse.dart';
 
 typedef JsonObject = Map<String, dynamic>;
 typedef JsonValue = dynamic;
-typedef FieldRefInput = Map<String, dynamic>;
+typedef FieldRefInput = dynamic;
 
 extension JsonValueExt on Object? {
   T get<T extends Object?>(name) {
@@ -22,27 +22,28 @@ abstract class GraphRefInput {
 class NullableGraphRef<E extends Entity, C extends GraphInput, U extends GraphInput> implements GraphRefInput {
   final String? _linkedId;
   final C? _create;
-  final E? _update;
+  final U? _update;
+  final String? _recordType;
   final bool isDisconnect;
 
-  const NullableGraphRef.connect(this._linkedId)
+  const NullableGraphRef.connect(this._linkedId, [this._recordType])
       : _create = null,
         isDisconnect = false,
         _update = null;
 
-  NullableGraphRef.update(E update)
+  NullableGraphRef.update(String id, U update, [this._recordType])
       : _update = update,
         isDisconnect = false,
-        _linkedId = update.id,
+        _linkedId = id,
         _create = null;
 
-  NullableGraphRef.connection(E entity)
+  NullableGraphRef.connection(E entity, [this._recordType])
       : _linkedId = entity.id,
         _update = null,
         isDisconnect = false,
         _create = null;
 
-  NullableGraphRef.create(C entity)
+  NullableGraphRef.create(C entity, [this._recordType])
       : _create = entity,
         _update = null,
         isDisconnect = false,
@@ -51,21 +52,23 @@ class NullableGraphRef<E extends Entity, C extends GraphInput, U extends GraphIn
   const NullableGraphRef.disconnect()
       : _linkedId = null,
         _create = null,
+        _recordType = null,
         isDisconnect = true,
         _update = null;
 
   @override
   FieldRefInput? get relatedJson {
+    var json;
     if (_create != null) {
-      return {
+      json = {
         "create": {
           "node": _create!.toJson(),
         }
       };
     } else if (_linkedId == null) {
-      return isDisconnect ? {"disconnect": {}} : null;
+      json = isDisconnect ? {"disconnect": {}} : null;
     } else {
-      return {
+      json = {
         "connect": {
           "where": {
             "node": {
@@ -73,16 +76,26 @@ class NullableGraphRef<E extends Entity, C extends GraphInput, U extends GraphIn
             }
           }
         },
-        "disconnect": {
-          "where": {
-            "node": {
-              "id_NOT": _linkedId,
+        if (_recordType == null)
+          "disconnect": {
+            "where": {
+              "node": {
+                "id_NOT": _linkedId,
+              }
             }
           }
-        }
       };
     }
+
+    return (_recordType != null && json != null)
+        ? {
+            _recordType: json,
+          }
+        : json;
   }
+
+  C? get create => _create;
+  U? get update => _update;
 }
 
 class NullableExtGraphRef<R extends Entity, E extends JoinTypeMixin<R>, C extends GraphInput, U extends GraphInput>
@@ -158,11 +171,18 @@ class ExtGraphRef<R extends Entity, E extends JoinTypeMixin<R>, C extends GraphI
 }
 
 class GraphRef<E extends Entity, C extends GraphInput, U extends GraphInput> extends NullableGraphRef<E, C, U> {
-  GraphRef.connect(String linkedId) : super.connect(linkedId);
+  GraphRef.connect(String linkedId, [String? recordType]) : super.connect(linkedId, recordType);
 
   GraphRef.connection(E entity) : super.connection(entity);
 
   GraphRef.create(C create) : super.create(create);
+  GraphRef.update(String id, U update) : super.update(id, update);
+}
+
+class GraphEnum<T> {
+  final T value;
+  const GraphEnum(this.value);
+  T toJson() => value;
 }
 
 class GraphRefList<E extends Entity, C extends GraphInput, U extends GraphInput> implements GraphRefInput {
@@ -188,7 +208,7 @@ class GraphRefList<E extends Entity, C extends GraphInput, U extends GraphInput>
               }
             }
           },
-        if(_createList.isNotEmpty)
+        if (_createList.isNotEmpty)
           "create": {
             "node": _createList.first.toJson(),
           }
@@ -218,27 +238,25 @@ class ExtGraphRefList<R extends Entity, E extends JoinTypeMixin<R>, C extends Gr
   @override
   FieldRefInput? get relatedJson {
     if (_connect.isNotEmpty || _disconnect.isNotEmpty) {
-      return {
-        "update": [
-          for (var ref in _connect)
-            if (ref._create != null)
-              {
-                "create": {
-                  "node": ref._create!.toJson(),
-                  "edge": ref._props!.toJson(),
-                }
+      return [
+        for (var ref in _connect)
+          if (ref._create != null)
+            {
+              "create": {
+                "node": ref._create!.toJson(),
+                "edge": ref._props!.toJson(),
               }
-            else if (ref._linkedId != null)
-              {
-                "connect": {
-                  "where": {
-                    "node": {"id": ref._linkedId!},
-                  },
-                  "edge": ref._props!.toJson(),
-                }
+            }
+          else if (ref._linkedId != null)
+            {
+              "connect": {
+                "where": {
+                  "node": {"id": ref._linkedId!},
+                },
+                "edge": ref._props!.toJson(),
               }
-        ]
-      };
+            }
+      ];
     } else {
       return null;
     }
@@ -249,36 +267,24 @@ extension _EntityIdExt on Entity {
   String get id => mkey!.mxid;
 }
 
-typedef RelatedBuilder = void Function(GraphInputMap data);
+typedef RelatedBuilder = void Function(JsonObject data);
 
 Map<String, dynamic>? relatedToJson(List<RelatedBuilder> rel) {
-  GraphInputMap data = {};
+  JsonObject data = {};
   for (var r in rel) {
     r(data);
   }
   return data.isEmpty ? null : data;
 }
 
-typedef GraphInputMap = Map<String, Map<String, dynamic>>;
+// typedef GraphInputMap = Map<String, Map<String, dynamic>>;
 
-RelatedBuilder relatedFieldJson(String fieldName, FieldRefInput? json) {
-  return (GraphInputMap map) {
-    json?.forEach((rtype, relJson) {
-      if (relJson != null && relJson.isNotEmpty == true) {
-        var fieldConfig = map.putIfAbsent(fieldName, () => {});
-        fieldConfig[rtype] = relJson;
-      }
-    });
-  };
-}
-
-RelatedBuilder relatedFieldJson2(String fieldName, FieldRefInput? json) {
-  return (GraphInputMap map) {
-    json?.forEach((rtype, relJson) {
-      if (relJson != null && relJson.isNotEmpty == true) {
-        var byKey = map.putIfAbsent(rtype, () => {});
-        byKey[fieldName] = relJson;
-      }
-    });
+/// This is more complicated because previously we were needing to pull the field json out into a separate root
+RelatedBuilder relatedFieldJson(String fieldName, dynamic json) {
+  return (JsonObject map) {
+    if (json == null || (json is Map && json.isEmpty) || (json is Iterable && json.isEmpty)) {
+      return;
+    }
+    map[fieldName] = json;
   };
 }

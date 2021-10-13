@@ -3,8 +3,8 @@ import 'package:build/build.dart';
 import 'package:logging/logging.dart';
 import 'package:source_gen/source_gen.dart';
 import 'package:sunny_graphql/sunny_graphql_annotations.dart';
-import 'package:sunny_graphql_generator/graphql_neo4j_code_builder.dart';
-import 'package:sunny_graphql_generator/graphql_neo4j_scanner.dart';
+import 'package:sunny_graphql_generator/neo4j/graphql_neo4j_code_builder.dart';
+import 'package:sunny_graphql_generator/neo4j/graphql_neo4j_scanner.dart';
 
 final _log = Logger('graph_generator');
 

@@ -17,10 +17,9 @@ buildSerializer(GraphQLScanResult model, CodeBuilder code) {
     for (var model in [
       ...model.inputTypes.values.map((model) => model.name.value),
       ...model.objectTypes.values.map((model) => model.name.value),
+      ...model.enumTypes.values.map((model) => model.name.value),
     ])
       '      case "${model}": return (_) => ${model}.fromJson(_);',
-    for (var enumValue in model.enumTypes.values)
-      '      case "${enumValue.name.value}": return (from) => parse${enumValue.name.value}(from);',
     '      default: return null;'
         '    }',
     '  }',
@@ -30,6 +29,7 @@ buildSerializer(GraphQLScanResult model, CodeBuilder code) {
     for (var model in [
       ...model.inputTypes.values.map((model) => model.name.value),
       ...model.objectTypes.values.map((model) => model.name.value),
+      ...model.enumTypes.values.map((model) => model.name.value),
     ])
       '      case "${model}": return (from) => from?.toJson();',
     '      default: return null;',

@@ -276,6 +276,8 @@ class SunnyGraphQLModel implements GraphQLScanResult {
               ),
             );
       });
+    } else if (type is DirectiveDefinitionNode) {
+      // We ignore these on purpose
     } else {
       _log.warning('Skipping type ${type}');
     }

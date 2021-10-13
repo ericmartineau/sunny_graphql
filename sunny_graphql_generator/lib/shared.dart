@@ -5,9 +5,6 @@ import 'package:gql/ast.dart';
 import 'package:sunny_graphql_generator/graphql_entity.dart';
 import 'package:sunny_graphql_generator/model.dart';
 
-import 'code_builder.dart';
-import 'shared_code_builders.dart';
-
 String? fieldName(Element element) {
   return element.name;
 }
@@ -142,7 +139,7 @@ String deserializer(DocumentNode doc, String ofExpr, TypeNode sourceType) {
   assert(sourceType is! ListTypeNode);
   var definitionType = doc.findType(sourceType);
   if (definitionType is EnumTypeDefinitionNode) {
-    return 'parse${definitionType.name.value}(${ofExpr})';
+    return '${definitionType.name.value}.fromJson(${ofExpr}!)';
   } else if (definitionType != null) {
     return '${definitionType.name.value}.fromJson(${ofExpr}!)';
   } else {
@@ -273,6 +270,24 @@ extension RawTypeNodeExt on Node {
   }
 }
 
+extension ListDirectivesNode on Iterable<DirectiveNode> {
+  String? getString(String directive, String argument) => getDirectiveValue(directive, argument)?.stringValue;
+  Iterable<String> getStrings(String directive, String argument) =>
+      getDirectiveValues(directive, argument).map((value) => value.stringValue).whereType<String>();
+
+  DirectiveNode? getDirective(String name) => where((element) => element.name.value == name).firstOr();
+  Iterable<DirectiveNode> getDirectives(String name) => where((element) => element.name.value == name);
+
+  ValueNode? getDirectiveValue(String directive, String argument) =>
+      getDirective(directive)?.arguments.where((e) => e.name.value == argument).firstOr()?.value;
+
+  Iterable<ValueNode> getDirectiveValues(String directive, String argument) => getDirectives(directive)
+      .expand((directive) => directive.arguments.where((e) => e.name.value == argument))
+      .map((d) => d.value);
+
+  bool hasDirective(String name) => any((element) => element.name.value == name);
+}
+
 extension FieldDefinitionNodeExt on FieldDefinitionNode {
   DirectiveNode? getDirective(String name) => directives.where((element) => element.name.value == name).firstOr();
 
@@ -393,320 +408,6 @@ extension TypeNodeExt on TypeNode {
   }
 }
 
-Class classDefinition(
-  GraphQLScanResult model,
-  NameNode nameNode, {
-  required bool toJson,
-  required bool toMap,
-  required bool fromJson,
-  required bool isInput,
-  required bool isJoinRecord,
-  Iterable<TypeNode> interfaces = const [],
-  required Iterable<FieldDefinition> fields,
-  bool isAbstract = false,
-  ClassSnippetGenerator? extraGenerator,
-}) {
-  String name = nameNode.value;
-  String? mixin = model.getMixin(name);
-  var sourceFields = fields.where((s) => !s.name.endsWith('Connection'));
-  final ifaces = [
-    ...interfaces,
-    ...model.getExtraInterfaces(name),
-  ];
-
-  if (name.endsWith('Where')) {
-    sourceFields = sourceFields.where((element) => element.name == 'id');
-  }
-
-  var c = Class(
-    (classDef) {
-      classDef
-        ..name = name
-        ..abstract = isAbstract
-        ..mixins.addAll([
-          if (mixin.isNotNullOrBlank) refer(mixin!),
-          for (var iface in interfaces)
-            if (iface.toDartType(withNullability: false).contains("Mixin")) refer(iface.toDartType(withNullability: false))
-        ])
-        ..implements.addAll([
-          for (var iface in ifaces)
-            if (!iface.toDartType(withNullability: false).contains("Mixin")) refer(iface.toDartType(withNullability: false))
-        ]);
-      if (isAbstract) {
-        classDef
-          ..methods.addAll([
-            if (toJson) Method((m) => m..name = 'relatedJson'),
-            if (toMap)
-              Method((m) => m
-                ..name = 'toMap'
-                ..returns = refer('Map<String, dynamic>')),
-            for (var field in sourceFields) ...[
-              Method((m) => m
-                ..type = MethodType.getter
-                ..name = field.mappedName
-                ..returns = refer(field.nullSafeType)),
-              Method((m) => m
-                ..type = MethodType.setter
-                ..requiredParameters.add(
-                  Parameter((p) => p
-                    ..name = field.mappedName
-                    ..type = refer(field.nullSafeType)),
-                )
-                ..name = field.mappedName),
-            ],
-          ]);
-        return;
-      }
-
-      if (isInput) {
-        classDef
-          ..constructors.addAll([
-            Constructor(
-              (ctr) => ctr
-                ..optionalParameters.addAll([
-                  for (var field in sourceFields)
-                    field.toParameter(
-                      isThis: false,
-                      forceOptional: true,
-                    ),
-                ])
-                ..initializers.add(
-                  CodeBuilder.build(
-                    (builder) {
-                      builder += "_data = {";
-                      for (var field in sourceFields) {
-                        builder += ' if (${field.name} != null) "${field.name}": ${field.name},';
-                      }
-                      builder += "}";
-                    },
-                  ),
-                ),
-            ),
-            Constructor(
-              (ctr) => ctr
-                ..name = 'fromJson'
-                ..requiredParameters.add(
-                  Parameter((p) => p
-                    ..name = "_data"
-                    ..toThis = true
-                    ..named = false),
-                ),
-            )
-          ])
-          ..fields.add(SimpleField("_data", "Map<String, dynamic>", modifier: FieldModifier.final$))
-          ..methods.addAll([
-            for (var field in sourceFields) ...[
-              Method((m) => m
-                ..type = MethodType.getter
-                ..name = field.mappedName
-                ..returns = refer(field.nullSafeType)
-                ..body = Code('return this.get("${field.mappedName}");')),
-            ],
-            Method((set) => set
-              ..annotations.add(refer('override'))
-              ..name = 'operator []='
-              ..returns = refer('void')
-              ..requiredParameters.addAll([
-                Parameter((p) => p
-                  ..name = 'key'
-                  ..type = refer('String')),
-                Parameter((p) => p..name = 'value'),
-              ])
-              ..body = CodeBuilder.build((body) {
-                body += 'if (this._data[key] != value) {';
-                body += '  this._data[key] = value;';
-                body += '}';
-              })),
-            Method((get) => get
-              ..annotations.add(refer('override'))
-              ..name = 'operator []'
-              ..returns = refer('dynamic')
-              ..requiredParameters.addAll([
-                Parameter((p) => p..name = 'key'),
-              ])
-              ..body = Code('return this._data[key];')),
-            Method((m) => m
-              ..name = 'toMap'
-              ..returns = refer('JsonObject')
-              ..body = Code('return this._data;')),
-            Method((toJsonMethod) {
-              //print(toJsonExpression);
-              toJsonMethod
-                ..name = 'toJson'
-                ..returns = refer('JsonObject?')
-                ..body = CodeBuilder.build((builder) {
-                  builder += [
-                    "_fieldJson(k, v) {",
-                    "  switch (k) {",
-                    for (var field in sourceFields)
-                      if (!field.isRelationship) 'case "${field.name}": return ${field.writeExpression('v')};',
-                    "    default: return null;",
-                    "  }",
-                    "}",
-                  ];
-                  builder += [
-                    "return <String, dynamic>{",
-                    "  for(var entry in this._data.entries)",
-                    "    entry.key: _fieldJson(entry.key, entry.value),",
-                    "};",
-                  ];
-                });
-            })
-          ]);
-      } else if (!isInput) {
-        classDef
-          ..constructors.addAll(
-            [
-              Constructor(
-                (ctr) => ctr
-                  ..optionalParameters.addAll([
-                    for (var field in sourceFields) field.toParameter(isThis: true),
-                  ]),
-              ),
-              Constructor(
-                (ctr) => ctr
-                  ..name = 'fromJson'
-                  ..factory = true
-                  ..requiredParameters.add(Parameter((p) => p
-                    ..name = "json"
-                    ..type = refer('dynamic')
-                    ..named = false))
-                  ..body = refer(name).call(
-                    [],
-                    {
-                      for (var field in sourceFields)
-                        if (!isInput || !field.isRelationship) field.mappedName: field.readExpression(),
-                    },
-                  ).code,
-              ),
-              Constructor(
-                (ctr) => ctr
-                  ..name = 'fromMap'
-                  ..requiredParameters.add(Parameter((p) => p
-                    ..name = "map"
-                    ..type = refer('Map<String, dynamic>')
-                    ..named = false))
-                  ..initializers.addAll([
-                    for (var field in sourceFields) Code("${field.mappedName} = map.get('${field.mappedName}')"),
-                  ]),
-              ),
-            ],
-          )
-          ..methods.addAll([
-            Method((toJsonMethod) {
-              var toJsonExpression = '{';
-              for (var field in sourceFields) {
-                if (!isInput || !field.isRelationship) {
-                  toJsonExpression += '  "${field.name}": ${field.writeExpression()},';
-                }
-              }
-              toJsonExpression += '}';
-              //print(toJsonExpression);
-              toJsonMethod
-                ..name = 'toJson'
-                ..returns = refer('JsonObject?')
-                ..body = Code("return $toJsonExpression;");
-            }),
-            Method((operatorSet) => operatorSet
-              ..annotations.add(refer('override'))
-              ..name = 'operator []='
-              ..returns = refer('void')
-              ..requiredParameters.addAll([
-                Parameter((p) => p
-                  ..name = 'key'
-                  ..type = refer('String')),
-                Parameter((p) => p..name = 'value'),
-              ])
-              ..body = CodeBuilder.build((builder) {
-                builder.block("switch(key)", (cases) {
-                  for (var fld in sourceFields) {
-                    builder += 'case "${fld.name}":';
-                    builder += '  this.${fld.name} = value as ${fld.nullableDartTypeName};';
-                    builder += '  break;';
-                  }
-                  builder += 'default: throw "No field \${key} found for $name";';
-                });
-              })),
-            Method((operatorGet) => operatorGet
-              ..annotations.add(refer('override'))
-              ..name = 'operator []'
-              ..returns = refer('dynamic')
-              ..requiredParameters.addAll([
-                Parameter((p) => p..name = 'key'),
-              ])
-              ..body = Code("""
-                  switch(key) {
-                    ${sourceFields.map((fld) => 'case "${fld.name}": return this.${fld.name};\n').join('\n')}
-                    default: 
-                      throw "No field \${key} found on ${name}";
-                  }
-                  """)),
-          ])
-          ..fields.addAll([
-            for (var field in sourceFields)
-              Field((f) => f
-                ..name = field.mappedName
-                ..type = refer(field.nullSafeType)),
-          ]);
-      }
-
-      classDef.methods.addAll([
-        Method((relatedJsonMethod) {
-          var relatedJsonExpr = '';
-          if (isInput && fields.related.isNotEmpty) {
-            relatedJsonExpr += '...?relatedToJson([';
-            for (var field in sourceFields) {
-              if (field.isRelationship) {
-                relatedJsonExpr += 'relatedFieldJson("${field.name}", this.${field.name}?.relatedJson),\n';
-              }
-            }
-
-            relatedJsonExpr += ']),\n';
-          }
-
-          relatedJsonExpr = '{ $relatedJsonExpr }';
-          relatedJsonMethod
-            ..name = 'relatedJson'
-            ..returns = refer('FieldRefInput?')
-            ..body = Code("return $relatedJsonExpr;");
-        }),
-      ]);
-
-      extraGenerator?.call(classDef, nameNode.value, fields, isAbstract);
-    },
-  );
-  // [
-  //   '${isAbstract ? 'abstract ' : ''}class ${name} ${mixin.isNotNullOrBlank ? ' with ${mixin} ' : ''}${interfaces.isNotEmpty ? "implements ${interfaces.map((e) => e.toDartType(withNullability: false)).join(', ')}" : ''} {',
-  //   if (!isAbstract) ...[
-  //     '  ${name}({',
-  //     for (var field in fields) '    ${field.isNonNull ? 'required ' : ''}this.${field.name},',
-  //     '  });',
-  //     for (var field in fields) '  ${field.nullSafeType} ${field.name};',
-  //     '',
-  //     '  dynamic relatedJson() => <String, dynamic>{',
-  //     for (var field in fields)
-  //       '    "${field.name}":  GraphClientConfig.write(this.${field.name}, typeName: "${field.typeNode.toDartType(withNullability: false)}", isList: ${field.isList}),',
-  //     '  };',
-  //     '',
-  //     '  factory ${name}.fromJson(json) {',
-  //     '    return ${name}(',
-  //     for (var field in fields)
-  //       '    ${field.name}:  GraphClientConfig.read${field.isList ? 'List' : ''}(json["${field.name}"], typeName: "${field.typeNode.toDartType(withNullability: false)}", isNullable: ${!field.isNonNull}),',
-  //     '    );',
-  //     '  }',
-  //   ] else ...[
-  //     for (var field in fields) ...[
-  //       '  ${field.nullSafeType} get ${field.name};',
-  //       '  set ${field.name}(${field.nullSafeType} ${field.name});',
-  //     ],
-  //     '  dynamic relatedJson();'
-  //         ''
-  //   ],
-  //   '}',
-  // ];
-  return c;
-}
-
 extension FieldNodeToParam on FieldDefinition {
   Parameter toParameter({
     bool isThis = false,
@@ -728,6 +429,7 @@ extension FieldNodeToParam on FieldDefinition {
 
 extension FieldDefinitionList on Iterable<FieldDefinition> {
   List<FieldDefinition> get lazy => this.where((f) => f.isLazy).toList();
+
   List<FieldDefinition> get related => this.where((f) => f.isRelationship).toList();
 }
 

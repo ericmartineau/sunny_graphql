@@ -2,6 +2,7 @@ import 'package:code_builder/code_builder.dart';
 import 'package:gql/ast.dart';
 import 'package:sunny_graphql_generator/shared.dart';
 
+import 'class_builder/class_code_builder.dart';
 import 'code_builder.dart';
 import 'shared.dart';
 import 'model.dart';
@@ -25,6 +26,7 @@ extension GraphScanSharedBuilder on GraphQLScanResult {
         toJson: true,
         toMap: true,
         isInput: false,
+        directives: def.directives,
         isJoinRecord: def.directives.any((element) => element.name.value == 'joinRecord'),
         interfaces: def.interfaces,
         fields: def.fields.map(
@@ -32,6 +34,30 @@ extension GraphScanSharedBuilder on GraphQLScanResult {
         ),
         extraGenerator: extraGenerator,
       );
+
+      /// Add paths and fields?
+      code += [
+        'class ${def.name.value}Fields {',
+        '  const ${def.name.value}Fields._();',
+        for (var field in def.fields.map((f) => FieldDefinition.ofField(this, f)))
+          '  static const ${field.name} = "${field.name}";',
+        '  static const values = {',
+        for (var field in def.fields) '      ${field.name.value},',
+        '  };',
+        '}',
+      ];
+
+      /// Add paths and fields?
+      code += [
+        'class ${def.name.value}Paths {',
+        '  const ${def.name.value}Paths._();',
+        for (var field in def.fields.map((f) => FieldDefinition.ofField(this, f)))
+          '  static const ${field.name} = JsonPath<${field.nullableDartTypeName}>.single("${field.name}");',
+        '  static const values = [',
+        for (var field in def.fields) '      ${field.name.value},',
+        '  ];',
+        '}',
+      ];
     });
     log.info('Writing Interfaces');
     this.declaredInterfaceTypes.forEach((def) {
@@ -43,6 +69,7 @@ extension GraphScanSharedBuilder on GraphQLScanResult {
         fromJson: false,
         isInput: false,
         isJoinRecord: false,
+        directives: def.directives,
         fields: def.fields.map((d) => FieldDefinition.ofField(this, d)),
         isAbstract: true,
       );
@@ -57,6 +84,7 @@ extension GraphScanSharedBuilder on GraphQLScanResult {
         toJson: true,
         toMap: true,
         isInput: true,
+        directives: def.directives,
         isJoinRecord: false,
         fields: def.fields.map((d) => FieldDefinition.ofInput(this, d)),
         extraGenerator: inputGenerator,
@@ -66,18 +94,18 @@ extension GraphScanSharedBuilder on GraphQLScanResult {
     log.info('Writing Enum');
     this.declaredEnumTypes.forEach((def) {
       code += [
-        'enum ${def.name.value} {',
-        for (var field in def.values) '  ${field.name.value},',
-        '}',
-        '',
-        '${def.name.value} parse${def.name.value}(json) {',
-        '  switch(json!.toString().toLowerCase()) {',
+        'class ${def.name.value} extends GraphEnum<String> {',
+        for (var field in def.values) '  static const ${field.name.value} = ${def.name.value}("${field.name.value}");',
+        '  static const values = [${def.values.map((v) => v.name.value).join(',')}];',
+        '  const ${def.name.value}(String value): super(value);',
+        '  factory ${def.name.value}.fromJson(json) {',
+        '    switch(json!.toString().toLowerCase()) {',
         for (var field in def.values)
-          '    case "${field.name.value.toLowerCase()}": return ${def.name.value}.${field.name.value};',
-        '    default: throw "Enum not recognized \${json}";',
+          '      case "${field.name.value.toLowerCase()}": return ${def.name.value}.${field.name.value};',
+        '      default: throw "Enum not recognized \${json}";',
+        '    }',
         '  }',
         '}',
-        '',
       ];
     });
     log.info('Writing Fragments');
@@ -118,10 +146,13 @@ extension FieldDefinitionCodeExt on FieldDefinition {
     }
     switch (this.typeNode.toRawType().toLowerCase()) {
       case 'float':
-      case 'string':
+        return refer('GraphClientConfig.doubleOf').call([jsonExpr]);
       case 'double':
-      case 'boolean':
+        return refer('GraphClientConfig.doubleOf').call([jsonExpr]);
       case 'int':
+        return refer('GraphClientConfig.intOf').call([jsonExpr]);
+      case 'string':
+      case 'boolean':
       case 'id':
         return jsonExpr.asA(refer(this.typeNode.toDartType()));
       default:
@@ -139,10 +170,13 @@ extension FieldDefinitionCodeExt on FieldDefinition {
 
     switch (this.typeNode.toRawType().toLowerCase()) {
       case 'float':
-      case 'string':
+        return 'GraphClientConfig.doubleOf($source)';
       case 'double':
-      case 'boolean':
+        return 'GraphClientConfig.doubleOf($source)';
       case 'int':
+        return 'GraphClientConfig.intOf($source)';
+      case 'string':
+      case 'boolean':
       case 'id':
         return source;
       default:
@@ -170,4 +204,14 @@ extension FieldDefinitionCodeExt on FieldDefinition {
   //       });
   //   }
   // }
+}
+
+extension MethodBuilderExt on MethodBuilder {
+  void overridden() {
+    this.annotate('override');
+  }
+
+  void annotate(String annotation) {
+    this.annotations.add(refer(annotation));
+  }
 }

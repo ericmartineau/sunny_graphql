@@ -1,66 +1,3 @@
-""" Indicates that this property should be fetched by default"""
-directive @eager on FIELD_DEFINITION
-
-""" Explicitly marks this as a db entity """
-directive @entity on OBJECT
-
-""" Indicates that when this property is encountered, it should be flattened into its parent"""
-directive @flatten on FIELD_DEFINITION
-
-""" Indicates that this property should not be included by default"""
-directive @lazy on FIELD_DEFINITION
-
-directive @named(name: String!) on FIELD_DEFINITION
-
-""" Indicates this entity should use an alternate form"""
-directive @partial(name: String!) on ARGUMENT_DEFINITION
-
-enum FamilyMemberType {
-  PARENT
-  CHILD
-}
-
-enum RelatableType {
-  CONTACT
-  ORG
-}
-
-scalar FlexiDate
-
-scalar Timestamp
-
-scalar URI
-
-interface IRef {
-  id: ID!
-  displayName: String!
-  photoUrl: URI
-}
-
-interface TribeMemberDetails @relationshipProperties {
-  joined: Boolean @default(value: false)
-  requested: Boolean @default(value: false)
-  role: String
-  isAdmin: Boolean @default(value: false)
-  dateCreated: Timestamp @timestamp(operations: [CREATE]) @readonly
-  dateModified: Timestamp @timestamp(operations: [CREATE, UPDATE]) @readonly
-}
-
-type Contact implements IRef @entity {
-  id: ID! @id
-  displayName: String!
-  nickName: String
-  photoUrl: URI
-  birthday: FlexiDate
-  dateModified: Timestamp @timestamp(operations: [UPDATE, CREATE]) @readonly
-  dateCreated: Timestamp @timestamp(operations: [CREATE]) @readonly
-  tribes: [Tribe!]! @named(name: "TribeMembership") @lazy @readonly @relationship(type: "MEMBER", direction: IN, properties: "TribeMemberDetails")
-  phases: [Phase!]! @eager @relationship(type: "PHASE", direction: OUT)
-  childFamily: FamilyTribe @lazy @relationship(type: "CHILD", direction: IN)
-  parentFamily: FamilyTribe @lazy @relationship(type: "PARENT", direction: IN)
-  friendGroups: [FriendGroupTribe!] @lazy @relationship(direction: OUT, type: "FRIEND")
-}
-
 fragment ContactFragment on Contact {
   id
   displayName
@@ -69,30 +6,6 @@ fragment ContactFragment on Contact {
   birthday
   dateCreated
   dateModified
-}
-
-fragment FamilyFragment on FamilyTribe {
-  id
-  startDate
-  endDate
-  tribe {
-    ...TribeFragment
-  }
-  parents {
-    ...ContactFragment
-  }
-  children {
-    ...ContactFragment
-  }
-}
-
-type FamilyTribe @entity {
-  id: ID! @id
-  tribe: Tribe! @eager @relationship(direction: OUT, type: "FAMILY_TRIBE")
-  startDate: FlexiDate
-  endDate: FlexiDate
-  parents: [Contact!]! @eager @relationship(type: "PARENT", direction: OUT)
-  children: [Contact!]! @eager @relationship(type: "CHILD", direction: OUT)
 }
 
 fragment FamilyTribeFragment on FamilyTribe {
@@ -106,15 +19,37 @@ fragment FamilyTribeFragment on FamilyTribe {
     ...ContactFragment
   }
   tribe {
-    id
-    displayName
-    photoUrl
-    slug
-    tribeType
+    ...TribeFragment
   }
 }
 
-fragment FriendGroupFragment on FriendGroupTribe {
+""" Indicates that this property should be fetched by default"""
+directive @eager on FIELD_DEFINITION
+
+""" Explicitly marks this as a db entity """
+directive @entity on OBJECT
+
+""" Indicates that when this property is encountered, it should be flattened into its parent"""
+directive @flatten on FIELD_DEFINITION
+
+directive @interfaces(name: String, api: String, input: String) repeatable on OBJECT
+
+""" Indicates that this property should not be included by default"""
+directive @lazy on FIELD_DEFINITION
+
+directive @mixin(name: String, api: String, input: String) repeatable on OBJECT
+
+directive @named(name: String!) on FIELD_DEFINITION
+
+""" Indicates this entity should use an alternate form"""
+directive @partial(name: String!) on ARGUMENT_DEFINITION
+
+enum FamilyMemberType {
+  PARENT
+  CHILD
+}
+
+fragment FriendGroupTribeFragment on FriendGroupTribe {
   id
   tribe {
     ...TribeFragment
@@ -124,27 +59,39 @@ fragment FriendGroupFragment on FriendGroupTribe {
   }
 }
 
-type FriendGroupTribe @entity {
-  id: ID! @id
-  tribe: Tribe! @eager @flatten @relationship(direction: OUT, type: "FRIEND_GROUP_TRIBE")
-  friends: [Contact!]! @eager @relationship(direction: IN, type: "FRIEND")
+fragment ImageMediaFragment on ImageMedia {
+  id
+  aspect
+  caption
+  checksum
+  fileName
+  height
+  location {
+    ...PhysicalLocationFragment
+  }
+  mediaType
+  mediaUrl
+  orientation
+  originalUrl
+  width
 }
 
-type Mutation {
-  version: String
+enum MediaType {
+  VIDEO
+  IMAGE
 }
 
-type Phase implements IRef @entity {
-  id: ID! @id
-  phased: HasPhases! @eager @relationship(type: "PHASE", direction: IN)
-  displayName: String!
-  photoUrl: URI
-  startDate: FlexiDate
-  endDate: FlexiDate
-  description: String
-  dateCreated: Timestamp! @readonly @timestamp(operations: [CREATE])
-  dateModified: Timestamp! @readonly @timestamp(operations: [CREATE, UPDATE])
+enum Orientation {
+  PORTRAIT
+  LANDSCAPE
 }
+
+enum RelatableType {
+  CONTACT
+  ORG
+}
+
+scalar FlexiDate
 
 fragment PhaseFragment on Phase {
   id
@@ -155,21 +102,173 @@ fragment PhaseFragment on Phase {
   dateCreated
   dateModified
   description
-  phased {
-    __typename
-    ... on IRef {
-      id
-      displayName
-      photoUrl
-    }
+}
+
+scalar Timestamp
+
+scalar URI
+
+interface Dimensioned {
+  height: Float
+  width: Float
+}
+
+interface IRef {
+  id: ID!
+  displayName: String!
+  photoUrl: URI
+}
+
+interface ITribeMixin {
+  tribe: Tribe!
+}
+
+interface Media {
+  id: ID!
+  fileName: String!
+  checksum: String
+  mediaUrl: URI!
+  caption: String
+  location: PhysicalLocation
+  aspect: Float
+  height: Float
+  width: Float
+  mediaType: MediaType
+  orientation: Orientation
+}
+
+interface TribeMemberDetails @relationshipProperties {
+  joined: Boolean @default(value: false)
+  requested: Boolean @default(value: false)
+  role: String
+  isAdmin: Boolean @default(value: false)
+  dateCreated: Timestamp @timestamp(operations: [CREATE]) @readonly
+  dateModified: Timestamp @timestamp(operations: [CREATE, UPDATE]) @readonly
+}
+
+type Contact implements IRef @entity @interfaces(api: "HasPhasesApi") @mixin(name: "HasPhasesMixin", input: "HasPhasesInputMixin") @interfaces(api: "HasMemoriesApi") @mixin(name: "HasMemoriesMixin", input: "HasMemoriesInputMixin") {
+  id: ID! @id
+  displayName: String!
+  nickName: String
+  photoUrl: URI
+  birthday: FlexiDate
+  dateModified: Timestamp @timestamp(operations: [UPDATE, CREATE]) @readonly
+  dateCreated: Timestamp @timestamp(operations: [CREATE]) @readonly
+  tribes: [Tribe!]! @named(name: "TribeMembership") @lazy @readonly @relationship(type: "MEMBER", direction: IN, properties: "TribeMemberDetails")
+  phases: [Phase!] @lazy @relationship(type: "PHASE", direction: OUT)
+  childFamily: FamilyTribe @lazy @relationship(type: "CHILD", direction: IN)
+  parentFamily: FamilyTribe @lazy @relationship(type: "PARENT", direction: IN)
+  friendGroups: [FriendGroupTribe!] @lazy @relationship(direction: OUT, type: "FRIEND")
+  memories: [Memory!] @lazy @relationship(type: "MEMORY", direction: OUT)
+}
+
+type FamilyTribe implements ITribeMixin @entity @interfaces(input: "ITribeInput") {
+  id: ID! @id
+  tribe: Tribe! @eager @relationship(direction: OUT, type: "FAMILY_TRIBE")
+  startDate: FlexiDate
+  endDate: FlexiDate
+  parents: [Contact!]! @eager @relationship(type: "PARENT", direction: OUT)
+  children: [Contact!]! @eager @relationship(type: "CHILD", direction: OUT)
+}
+
+type FriendGroupTribe implements ITribeMixin @entity @interfaces(input: "ITribeInput") {
+  id: ID! @id
+  tribe: Tribe! @eager @flatten @relationship(direction: OUT, type: "FRIEND_GROUP_TRIBE")
+  friends: [Contact!]! @eager @relationship(direction: IN, type: "FRIEND")
+}
+
+type ImageMedia implements Dimensioned & Media @entity {
+  id: ID! @id
+  fileName: String!
+  checksum: String
+  mediaUrl: URI!
+  caption: String
+  location: PhysicalLocation
+  aspect: Float
+  height: Float
+  width: Float
+  mediaType: MediaType
+  orientation: Orientation
+  originalUrl: URI
+}
+
+type Memory implements IRef @entity @interfaces(name: "IMemory") {
+  id: ID! @id
+  contacts: [Contact!] @eager @relationship(type: "MEMORY", direction: IN)
+  tribes: [Tribe!] @eager @relationship(type: "MEMORY", direction: IN)
+  displayName: String!
+  memoryDetails: String
+  location: PhysicalLocation @eager @relationship(type: "LOCATION", direction: IN)
+  photoUrl: URI
+  memoryDate: FlexiDate!
+  imageMedia: [ImageMedia!] @eager @relationship(type: "IMAGE_MEDIA", direction: IN)
+  videoMedia: [VideoMedia!] @eager @relationship(type: "VIDEO_MEDIA", direction: IN)
+  dateCreated: Timestamp @timestamp(operations: [CREATE])
+  dateModified: Timestamp @timestamp(operations: [CREATE, UPDATE])
+}
+
+fragment MemoryFragment on Memory {
+  id
+  displayName
+  photoUrl
+  memoryDate
+  memoryDetails
+  contacts {
+    ...ContactFragment
   }
+  tribes {
+    ...TribeFragment
+  }
+  imageMedia {
+    ...ImageMediaFragment
+  }
+  videoMedia {
+    ...VideoMediaFragment
+  }
+  location {
+    ...PhysicalLocationFragment
+  }
+  dateModified
+  dateModified
+}
+
+type Mutation {
+  version: String
+}
+
+type Phase implements IRef @entity @interfaces(name: "IPhase") {
+  id: ID! @id
+  phased: HasPhases @eager @relationship(type: "PHASE", direction: IN)
+  displayName: String!
+  photoUrl: URI
+  startDate: FlexiDate
+  endDate: FlexiDate
+  description: String
+  dateCreated: Timestamp @timestamp(operations: [CREATE])
+  dateModified: Timestamp @timestamp(operations: [CREATE, UPDATE])
+}
+
+type PhysicalLocation implements IRef @entity {
+  id: ID!
+  lat: Float
+  lon: Float
+  displayName: String!
+  photoUrl: URI
+}
+
+fragment PhysicalLocationFragment on PhysicalLocation {
+  id
+  displayName
+  photoUrl
+  lat
+  lon
 }
 
 type Query {
   version: String
 }
 
-type Tribe implements IRef @entity {
+type Tribe implements IRef @entity @interfaces(api: "HasPhasesApi") @mixin(name: "HasPhasesMixin", input: "HasPhasesInputMixin") @interfaces(api: "HasMemoriesApi") @mixin(name: "HasMemoriesMixin", input: "HasMemoriesInputMixin") {
   id: ID! @id(autogenerate: false)
   displayName: String!
   photoUrl: URI
@@ -178,19 +277,9 @@ type Tribe implements IRef @entity {
   dateModified: Timestamp @timestamp(operations: [UPDATE, CREATE]) @readonly
   dateCreated: Timestamp @timestamp(operations: [CREATE]) @readonly
   members: [Contact!]! @named(name: "TribeMember") @eager @relationship(direction: OUT, type: "MEMBER", properties: "TribeMemberDetails")
-  phases: [Phase!]! @eager @relationship(type: "PHASE", direction: OUT)
+  phases: [Phase!] @lazy @relationship(type: "PHASE", direction: OUT)
+  memories: [Memory!] @lazy @relationship(type: "MEMORY", direction: OUT)
 }
-
-type UserContact @entity {
-  id: ID! @id(autogenerate: false)
-  contact: Contact! @eager @flatten @relationship(type: "USER", direction: OUT)
-  username: String
-  firebaseUid: String
-  email: String
-  phone: String
-}
-
-union HasPhases = Contact | Tribe
 
 fragment TribeFragment on Tribe {
   id
@@ -208,6 +297,15 @@ fragment TribeFragment on Tribe {
   }
 }
 
+type UserContact @entity {
+  id: ID! @id(autogenerate: false)
+  contact: Contact! @eager @flatten @relationship(type: "USER", direction: OUT)
+  username: String
+  firebaseUid: String
+  email: String
+  phone: String
+}
+
 fragment UserContactFragment on UserContact {
   id
   contact {
@@ -217,4 +315,43 @@ fragment UserContactFragment on UserContact {
   firebaseUid
   phone
   username
+}
+
+type VideoMedia implements Dimensioned & Media @entity {
+  id: ID! @id
+  fileName: String!
+  checksum: String
+  mediaUrl: URI!
+  caption: String
+  location: PhysicalLocation
+  aspect: Float
+  height: Float
+  width: Float
+  mediaType: MediaType
+  orientation: Orientation
+  originalUrl: URI
+  durationMs: Int
+  startFrom: Int
+  thumbnailUrl: ImageMedia
+}
+
+union HasPhases = Contact | Tribe
+
+fragment VideoMediaFragment on VideoMedia {
+  id
+  aspect
+  caption
+  checksum
+  fileName
+  height
+  location {
+    ...PhysicalLocationFragment
+  }
+  mediaType
+  mediaUrl
+  orientation
+  originalUrl
+  width
+  durationMs
+  startFrom
 }

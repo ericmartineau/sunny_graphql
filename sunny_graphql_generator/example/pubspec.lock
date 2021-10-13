@@ -240,12 +240,12 @@ packages:
     source: hosted
     version: "0.7.1"
   dartxx:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: dartxx
       url: "https://pub.dartlang.org"
     source: hosted
-    version: "0.5.0+2"
+    version: "0.5.3+2"
   dbus:
     dependency: transitive
     description:
@@ -827,12 +827,12 @@ packages:
     source: path
     version: "1.11.0"
   sunny_sdk_core:
-    dependency: "direct main"
+    dependency: "direct overridden"
     description:
-      name: sunny_sdk_core
-      url: "https://pub.dartlang.org"
-    source: hosted
-    version: "2.0.0+10"
+      path: "../../../sunny_sdk_core"
+      relative: true
+    source: path
+    version: "2.1.0+3"
   term_glyph:
     dependency: transitive
     description:

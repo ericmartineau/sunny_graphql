@@ -27,6 +27,17 @@ class CodeBuilder {
     return Code(b.toString());
   }
 
+  static Code lines(
+    List lines, {
+    DartEmitter? emitter,
+    DartFormatter? formatter,
+    int indent = 0,
+  }) {
+    var b = CodeBuilder(emitter: emitter, formatter: formatter, indent: indent);
+    b += lines;
+    return Code(b.toString());
+  }
+
   CodeBuilder({DartEmitter? emitter, DartFormatter? formatter, this.indent = 0})
       : emitter = emitter ?? DartEmitter(),
         _indent = _repeat('  ', indent),

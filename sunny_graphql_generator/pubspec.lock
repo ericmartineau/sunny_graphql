@@ -479,7 +479,7 @@ packages:
     source: hosted
     version: "4.0.0"
   inflection3:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: inflection3
       url: "https://pub.dartlang.org"
@@ -785,12 +785,12 @@ packages:
     source: path
     version: "1.0.1"
   sunny_sdk_core:
-    dependency: transitive
+    dependency: "direct main"
     description:
-      name: sunny_sdk_core
-      url: "https://pub.dartlang.org"
-    source: hosted
-    version: "2.0.0+10"
+      path: "../../sunny_sdk_core"
+      relative: true
+    source: path
+    version: "2.1.0+3"
   term_glyph:
     dependency: transitive
     description:

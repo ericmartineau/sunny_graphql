@@ -1,3 +1,5 @@
+import 'package:gql/ast.dart';
+import 'package:inflection3/inflection3.dart';
 import 'package:sunny_graphql_generator/shared.dart';
 
 enum GraphOpType { create, update, delete, list, count }
@@ -7,8 +9,11 @@ enum GraphOpType { create, update, delete, list, count }
 /// that's more like what we want, less like the raw graphQL schema
 class GraphQLEntity {
   final String name;
+  String get namePlural => pluralize(name);
   final List<FieldDefinition> fields = [];
   final List<String> mixins = [];
+  final List<String> serviceMixins = [];
+  final List<String> serviceInterfaces = [];
   final Set<GraphOpType> ops = {};
 
   GraphQLEntity(this.name);

@@ -1,4 +1,5 @@
 import 'package:sunny_graphql/graph_client_serialization.dart';
+import 'package:sunny_graphql/refs.dart';
 import 'package:sunny_sdk_core/api_exports.dart';
 
 class ReliveItGraphQLSerializers {
@@ -7,7 +8,6 @@ class ReliveItGraphQLSerializers {
       case 'Uri':
         return (input) => Uri.parse(input.toString());
       case 'FlexiDate':
-        print("Flex");
         return (input) => FlexiDate.fromJson(input);
       default:
         return null;
@@ -20,6 +20,8 @@ class ReliveItGraphQLSerializers {
         return data.toString();
       } else if (data is FlexiDate) {
         return data.toJson();
+      } else if (data is GraphEnum) {
+        return data.value;
       } else {
         return data;
       }
