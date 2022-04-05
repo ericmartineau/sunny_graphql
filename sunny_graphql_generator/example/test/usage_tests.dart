@@ -1,12 +1,15 @@
+import 'dart:convert';
+
 import 'package:example/graphql_stuff.dart';
 import 'package:example/primitive_serializers.dart';
-import 'package:flutter/cupertino.dart' hide Orientation;
-import 'package:flutter_test/flutter_test.dart';
-import 'package:graphql/client.dart';
 import 'package:flexidate/flexidate.dart';
+import 'package:sunny_sdk_core/data.dart';
+
+import 'package:graphql/client.dart';
 import 'package:logging/logging.dart';
 import 'package:logging_config/logging_config.dart';
 import 'package:sunny_graphql/sunny_graphql.dart';
+import 'package:test_api/test_api.dart';
 
 var gql = """
 mutation addChild(\$familyId: ID! = null, \$contactId: ID! = null) {
@@ -37,10 +40,12 @@ Future main() async {
     ..addReader(ReliveItGraphQLSerializers.primitiveReader)
     ..addWriter(ReliveItGraphQLSerializers.primitiveWriter);
   GraphClientConfig.init(client, serializer: serializer);
-  final contacts = ContactApi(() => client, resolver, serializer);
-  final memories = MemoryApi(() => client, resolver, serializer);
-  final uc = UserContactApi(() => client, resolver, serializer);
-  final ft = FamilyTribeApi(() => client, resolver, serializer);
+  final events = RecordEventService();
+  final contacts = ContactApi(() => client, resolver, serializer, events);
+  final memories = MemoryApi(() => client, resolver, serializer, events);
+  final specialEventApi = SpecialEventApi(() => client, resolver, serializer, events);
+  final uc = UserContactApi(() => client, resolver, serializer, events);
+  final ft = FamilyTribeApi(() => client, resolver, serializer, events);
   late String contactId;
 
   test("saves contact", () async {
@@ -99,14 +104,16 @@ Future main() async {
     final contact2 = await contacts.create(ContactCreateInput(
       displayName: "Billbert Boggins",
     ));
-    final memoryCreat = await memories.create(
-      MemoryCreateInput(
-        contacts: GraphRefList(connect: [
-          GraphRef.connect(contact1.id),
-          GraphRef.connect(contact2.id),
+
+    late MemoryCreateInput memoryCreateInput;
+    try {
+      memoryCreateInput = MemoryCreateInput(
+        participants: MemoryParticipantRefList.list(connect: [
+          MemoryParticipantRef.connect(contact1.id, FactParticipant()),
+          MemoryParticipantRef.connect(contact2.id, FactParticipant()),
         ]),
         displayName: "My fancy memory",
-        memoryDate: FlexiDate.now(),
+        factDate: FlexiDate.now(),
         location: GraphRef.create(
           PhysicalLocationCreateInput(
             displayName: "My House",
@@ -115,43 +122,75 @@ Future main() async {
             lon: 153.0,
           ),
         ),
-        imageMedia: GraphRefList(connect: [
-          GraphRef.create(ImageMediaCreateInput(
-            height: 800.0,
-            width: 1200.0,
-            aspect: .6,
-            caption: "Last year's party",
-            mediaUrl: Uri.parse('https://someimage.com'),
-            mediaType: MediaType.IMAGE,
-            fileName: "last-years-party.png",
-            orientation: Orientation.PORTRAIT,
-          ))
-        ]),
-        videoMedia: GraphRefList(connect: [
-          GraphRef.create(VideoMediaCreateInput(
-            height: 800.0,
-            width: 1200.0,
-            aspect: .6,
-            caption: "Last year's party",
-            mediaUrl: Uri.parse('https://someimage.com'),
-            mediaType: MediaType.VIDEO,
-            fileName: "last-years-party.mp4",
-            orientation: Orientation.PORTRAIT,
-            durationMs: 30000,
-          ))
-        ]),
-      ),
-    );
-    // print(loadedUser.toMap());
+        imageMedia: MemoryImageMediumRefList.single(
+          connect: MemoryImageMediumRef.create(
+            ImageMediaCreateInput(
+              height: 800.0,
+              width: 1200.0,
+              aspect: .6,
+              caption: "Last year's party",
+              mediaUrl: Uri.parse('https://someimage.com'),
+              mediaType: MediaType.IMAGE,
+              fileName: "last-years-party.png",
+              orientation: Orientation.PORTRAIT,
+            ),
+            MediaSelection(sortOrder: 0),
+          ),
+        ),
+        videoMedia: MemoryVideoMediumRefList.single(
+          connect: MemoryVideoMediumRef.create(
+            VideoMediaCreateInput(
+              height: 800.0,
+              width: 1200.0,
+              aspect: .6,
+              caption: "Last year's party",
+              mediaUrl: Uri.parse('https://someimage.com'),
+              mediaType: MediaType.VIDEO,
+              fileName: "last-years-party.mp4",
+              orientation: Orientation.PORTRAIT,
+              durationMs: 30000,
+            ),
+            MediaSelection(sortOrder: 0),
+          ),
+        ),
+      );
+      final memoryCreate = await memories.create(
+        memoryCreateInput,
+      );
 
-    _log.warning(memoryCreat.toMap());
+      late SpecialEventCreateInput specialEventCreateInput;
 
-    final contactMemories = await contacts.loadMemoriesForRecord(contact1.id);
-    final contact2Memories = await contacts.loadMemoriesForRecord(contact2.id);
-    expect(contactMemories, hasLength(1));
-    expect(contact2Memories, hasLength(1));
+      specialEventCreateInput = SpecialEventCreateInput(
+          participants: ExtGraphRefList.list(connect: [
+            ExtGraphRef.connect(contact1.id, FactParticipant()),
+            ExtGraphRef.connect(contact2.id, FactParticipant()),
+          ]),
+          displayName: "My fancy memory",
+          factDate: FlexiDate.now(),
+          eventDetails: "This event was speeecial",
+          isAnnual: true);
+      final specialEventCreate = await specialEventApi.create(specialEventCreateInput);
+      // print(loadedUser.toMap());
 
-    expect(contactMemories!.first.id, equals(memoryCreat.id));
-    expect(contact2Memories!.first.id, equals(memoryCreat.id));
+      _log.warning(specialEventCreate.toMap());
+      final contactFacts = await contacts.loadFactsForRecord(contact1.id);
+      final contact2Facts = await contacts.loadFactsForRecord(contact2.id);
+      expect(contactFacts, hasLength(2));
+      expect(contact2Facts, hasLength(2));
+
+      expect(contactFacts.map((f) => f.node).whereType<Memory>(), hasLength(1));
+      expect(contactFacts.map((f) => f.node).whereType<SpecialEvent>(), hasLength(1));
+
+      final start = DateTime.now();
+      final contactFacts2 = await contacts.loadFactsForRecord(contact1.id);
+      final contact2Facts2 = await contacts.loadFactsForRecord(contact2.id);
+      print("Completed lookups second time in ${DateTime.now().millisecondsSinceEpoch - start.millisecondsSinceEpoch}ms");
+    } on Exception catch (e, stack) {
+      final memoryInputStr = json.encode(memoryCreateInput.toJson());
+      print(memoryInputStr);
+      print(e);
+      print(stack);
+      rethrow;
+    }
   });
 }

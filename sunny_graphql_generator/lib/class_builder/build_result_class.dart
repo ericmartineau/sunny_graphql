@@ -8,25 +8,35 @@ import '../shared_code_builders.dart';
 void buildNonInputClass(
   ClassBuilder classDef, {
   required String name,
+  required bool isEntity,
   required Iterable<FieldDefinition> sourceFields,
   required List<DirectiveNode> directives,
 }) {
-  final mixins = directives.getStrings("mixin", "name");
-  final interfaces = directives.getStrings("interfaces", "name");
   classDef
-    ..mixins.addAll([
-      ...mixins.map(refer),
-    ])
     ..implements.addAll([
-      refer('Entity'),
-      ...interfaces.map(refer),
+      if (isEntity) refer('Entity'),
     ])
     ..constructors.addAll(
       [
         Constructor(
           (ctr) => ctr
             ..optionalParameters.addAll([
-              for (var field in sourceFields) field.toParameter(isThis: true),
+              for (var field in sourceFields)
+                if (field.isList)
+                  field.toParameter(
+                    isThis: false,
+                    forceOptional: true,
+                  )
+                else
+                  field.toParameter(isThis: true),
+            ])
+            ..initializers.addAll([
+              for (var field in sourceFields)
+                if (field.isList) Code("${field.name} = ${field.name} ?? []"),
+            ])
+            ..body = CodeBuilder.lines([
+              for (var field in sourceFields)
+                if (field.relationship?.propsType != null) 'this.${field.mappedName}.self = this;',
             ]),
         ),
         Constructor(
@@ -77,6 +87,11 @@ void buildNonInputClass(
           ..returns = refer('JsonObject?')
           ..body = Code("return $toJsonExpression;");
       }),
+      Method((cloner) => cloner
+        ..overridden()
+        ..name = 'clone'
+        ..returns = refer(name)
+        ..body = Code("return ${name}.fromMap(this.toMap());")),
       Method((operatorSet) => operatorSet
         ..overridden()
         ..name = 'operator []='

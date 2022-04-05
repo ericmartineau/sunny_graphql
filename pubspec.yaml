@@ -4,12 +4,12 @@ version: 1.0.1
 homepage: https://github.com/ericmartineau/sunny_graphql
 
 environment:
-  sdk: ">=2.13.0 <3.0.0"
+  sdk: ">=2.14.0 <3.0.0"
   flutter: ">=1.17.0"
 
 dependencies:
   logging: ^1.0.2
-  dartxx: ^0.5.0+2
+  dartxx: ^0.5.3+2
   #  analyzer: ^0.41.1
   #  build: ^1.5.2
   #  args: ^1.6.0
@@ -18,7 +18,8 @@ dependencies:
   #  dartx: ^0.5.0
   pedantic: ^1.11.1
   uri: ^1.0.0
-  sunny_sdk_core: ^2.0.0+15
+  sunny_sdk_core: ^2.4.0+11
+  collection_diff: ^2.0.3+6
   inflection3: ^0.5.3+2
   flutter:
     sdk: flutter
@@ -28,9 +29,6 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-dependency_overrides:
-  sunny_sdk_core:
-    path: ../sunny_sdk_core
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

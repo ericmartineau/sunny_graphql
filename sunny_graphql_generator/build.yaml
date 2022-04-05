@@ -8,10 +8,17 @@ targets:
 builders:
   sunny_graphql_generator:
     import: "package:sunny_graphql_generator/build.dart"
-    builder_factories: [ "sunnyGraphQL" ]
+    builder_factories:
+      - "sunnyGraphQL"
     build_extensions: { ".dart": [ ".graphql.g.part" ] }
     auto_apply: dependents
     build_to: source
-    applies_builders: [ "source_gen|combining_builder" ]
+    applies_builders:
+      - "source_gen|combining_builder"
+    runs_before:
+      - sunny_fluro_generator:fluro_routes
+      - flutter_degen:degen
+      - sunny_fluro_generator:fluro_route
+
 
 

@@ -6,6 +6,7 @@ import 'package:logging_config/logging_config.dart';
 import 'package:provider/provider.dart';
 import 'package:sunny_graphql/graph_client_config.dart';
 import 'package:sunny_graphql/graph_client_serialization.dart';
+import 'package:sunny_sdk_core/data.dart';
 
 import 'graphql_stuff.dart';
 
@@ -21,12 +22,12 @@ class _GraphQLProvidersState extends State<GraphQLProviders> {
   late GraphQLClient client;
 
   late ContactApi contactsApi;
+  late TribeApi tribeApi;
   late UserContactApi userApi;
   late FamilyTribeApi familyApi;
 
   @override
   void initState() {
-    // TODO: implement initState
     super.initState();
 
     configureLogging(LogConfig.root(Level.INFO));
@@ -46,10 +47,12 @@ class _GraphQLProvidersState extends State<GraphQLProviders> {
       ..addWriter(GraphQLStuffJson().getWriter)
       ..addWriter(ReliveItGraphQLSerializers.primitiveWriter)
       ..addReader(ReliveItGraphQLSerializers.primitiveReader);
+    final events = RecordEventService();
     GraphClientConfig.init(client, serializer: serializer);
-    contactsApi = ContactApi(() => client, resolver, serializer);
-    userApi = UserContactApi(() => client, resolver, serializer);
-    familyApi = FamilyTribeApi(() => client, resolver, serializer);
+    contactsApi = ContactApi(() => client, resolver, serializer, events);
+    userApi = UserContactApi(() => client, resolver, serializer, events);
+    familyApi = FamilyTribeApi(() => client, resolver, serializer, events);
+    tribeApi = TribeApi(() => client, resolver, serializer, events);
   }
 
   @override
@@ -57,6 +60,7 @@ class _GraphQLProvidersState extends State<GraphQLProviders> {
     return MultiProvider(
       providers: [
         Provider.value(value: familyApi),
+        Provider.value(value: tribeApi),
         Provider.value(value: userApi),
         Provider.value(value: userApi),
         Provider.value(value: contactsApi),
@@ -72,4 +76,5 @@ extension GraphApis on BuildContext {
   ContactApi get contactsApi => Provider.of(this, listen: false);
   UserContactApi get userApi => Provider.of(this, listen: false);
   FamilyTribeApi get familyApi => Provider.of(this, listen: false);
+  TribeApi get tribeApi => Provider.of(this, listen: false);
 }

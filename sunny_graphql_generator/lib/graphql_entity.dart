@@ -25,13 +25,28 @@ class GraphQLEntity {
   }
 }
 
+class JoinType {
+  final String name;
+  final String? extending;
+  final List<String>? mixins;
+
+  JoinType({required this.name, this.extending, this.mixins});
+  static JoinType? ofDirective(DirectiveNode? node) {
+    if (node == null) return null;
+    return JoinType(
+        name: node.getArgument("name").get(),
+        extending: node.getArgument("extends")?.tryGet(),
+        mixins: node.getArgument("mixins")?.tryGetList());
+  }
+}
+
 class GraphQLRelation {
   final String fieldName;
   final String belongsTo;
   final bool isLazy;
+  final String? eagerPrefix;
   final bool isEager;
   final String? propsType;
-  final String? joinTypeName;
 
   GraphQLRelation({
     required this.belongsTo,
@@ -39,6 +54,6 @@ class GraphQLRelation {
     required this.isLazy,
     required this.isEager,
     required this.propsType,
-    required this.joinTypeName,
+    required this.eagerPrefix,
   });
 }

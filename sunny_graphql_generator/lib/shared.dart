@@ -2,8 +2,10 @@ import 'package:analyzer/dart/element/element.dart';
 import 'package:code_builder/code_builder.dart';
 import 'package:dartxx/dartxx.dart';
 import 'package:gql/ast.dart';
+import 'package:sunny_dart/helpers.dart';
 import 'package:sunny_graphql_generator/graphql_entity.dart';
 import 'package:sunny_graphql_generator/model.dart';
+import 'package:sunny_graphql_generator/neo4j/graphql_neo4j_scanner.dart';
 
 String? fieldName(Element element) {
   return element.name;
@@ -13,6 +15,7 @@ class FieldDefinition {
   final GraphQLScanResult model;
   final String name;
   final String dartTypeName;
+  final String entityName;
 
   final List<InputValueDefinitionNode> args;
   final bool isNonNull;
@@ -21,6 +24,7 @@ class FieldDefinition {
   final Node original;
   final GraphQLRelation? relationship;
   final bool isEager;
+  final String? eagerPrefix;
   final bool isLazy;
   final bool isReadOnly;
   final bool isWriteOnly;
@@ -32,10 +36,12 @@ class FieldDefinition {
   FieldDefinition.ofInput(
     this.model,
     InputValueDefinitionNode node, {
+    required this.entityName,
     this.isReadOnly = false,
     this.isFlattened = false,
     this.isId = false,
     this.isEager = false,
+    this.eagerPrefix,
     this.isLazy = false,
     this.isAutogenerateId = false,
     this.isWriteOnly = false,
@@ -52,34 +58,53 @@ class FieldDefinition {
   FieldDefinition.ofField(
     this.model,
     FieldDefinitionNode node, {
-    this.relationship,
+    required this.entityName,
   })  : name = node.name.value,
         original = node,
         isId = node.isId,
         isAutogenerateId = node.isAutogenerateId,
         isReadOnly = node.isReadOnly,
         isEager = node.isEager,
+        eagerPrefix = node.eagerPrefix,
         isLazy = node.isLazy,
+        relationship = (node.missingDirective('relationship')
+            ? null
+            : GraphQLRelation(
+                belongsTo: entityName,
+                fieldName: node.name.value,
+                isLazy: node.isLazy,
+                isEager: node.isEager,
+                eagerPrefix: node.eagerPrefix,
+                propsType: node.directives.getDirectiveValue('relationship', 'properties')?.stringValue,
+              )),
         isWriteOnly = node.isWriteOnly,
         isFlattened = node.isFlattened,
-        isRelationship = relationship != null,
+        isRelationship = node.hasDirective('relationship'),
         isList = node.type is ListTypeNode,
         args = node.args,
-        typeNode = (relationship?.joinTypeName != null
-            ? NamedTypeNode(name: NameNode(value: relationship!.joinTypeName!))
+        typeNode = (node.directives.getDirectiveValue('relationship', 'properties')?.stringValue != null
+            ? NamedTypeNode(name: NameNode(value: buildJoinRecordName(entityName, node.name.value)))
             : (node.type is ListTypeNode ? (node.type as ListTypeNode).type : node.type)),
         dartTypeName = node.type.toDartType(withNullability: false),
         isNonNull = node.type.isNonNull;
 
   String get mappedName => model.fieldName(name);
 
+  String? get joinRecordType => relationship?.propsType == null ? null : buildJoinRecordName(entityName, name);
+
   String get nullableDartTypeName {
     return '$dartTypeName${isNonNull ? '' : '?'}';
   }
 
+  bool get isNullable => !isNonNull;
+
+  String get nullableDartOrListTypeName {
+    return this.isList ? 'List<${dartTypeName}>' : nullableDartTypeName;
+  }
+
   String get relationType {
     var ext = (relationship?.propsType != null) ? "Ext" : "";
-    if (!isList && !isNonNull) {
+    if (!isList && isNullable) {
       return "Nullable${ext}GraphRef";
     } else if (!isList) {
       return "${ext}GraphRef";
@@ -88,9 +113,34 @@ class FieldDefinition {
     }
   }
 
+  String get singularRelationType {
+    var ext = (joinRecordType != null) ? "Ext" : "";
+    return "${ext}GraphRef";
+  }
+
+  /// The name of the related type of this entity, regardless of whether this is a list of singular
+  ///
+  /// For example if this field is:
+  /// tribes: TribeRefList
+  ///
+  /// then [singularRefType] will point to [Tribe]
+  String get singularRefType {
+    final field = this;
+
+    var dartType = field.joinRecordType ?? field.typeNode.toDartType(withNullability: false);
+    var inputType = dartType;
+    if (this.relationship?.propsType != null) {
+      if (field.original is FieldDefinitionNode) {
+        inputType = field.joinRecordType ?? (field.original as FieldDefinitionNode).type.toRawType();
+      }
+    }
+
+    return '${inputType}Ref';
+  }
+
   String relationRefType() {
     final field = this;
-    var dartType = field.typeNode.toDartType(withNullability: false);
+    var dartType = relationship?.propsType ?? field.typeNode.toDartType(withNullability: false);
     var inputType = dartType;
     var type = "${field.relationType}<";
     if (this.relationship?.propsType != null) {
@@ -99,8 +149,44 @@ class FieldDefinition {
         inputType = (field.original as FieldDefinitionNode).type.toRawType();
       }
     }
+    type += "${dartType}, ${inputType}CreateInput, ${inputType}UpdateInput";
+    if (isList) {
+      type += ', ${singularRefType}';
+    }
+    type += '>';
+    return type;
+  }
+
+  String relationSingularRefType() {
+    if (!isList) {
+      throw "Must be list type";
+    }
+
+    final field = this;
+    var dartType = relationship?.propsType ?? field.typeNode.toDartType(withNullability: false);
+    var inputType = dartType;
+    var type = "${field.singularRelationType}<";
+    if (this.relationship?.propsType != null) {
+      if (field.original is FieldDefinitionNode) {
+        type += "${(field.original as FieldDefinitionNode).type.toRawType()}, ";
+        inputType = (field.original as FieldDefinitionNode).type.toRawType();
+      }
+    }
     type += "${dartType}, ${inputType}CreateInput, ${inputType}UpdateInput>";
     return type;
+  }
+
+  String relationRefAlias() {
+    final field = this;
+    var dartType = field.typeNode.toDartType(withNullability: false);
+    var inputType = dartType;
+    var relatedName = this.joinRecordType ?? inputType;
+    var baseName = '${relatedName}Ref';
+    return isList
+        ? '${baseName}List'
+        : isNullable
+            ? 'Nullable$baseName'
+            : baseName;
   }
 
   String get nullSafeType {
@@ -120,6 +206,11 @@ class FieldDefinition {
       return true;
     }
     return ((isId && !isAutogenerateId) || !isReadOnly) && !isRelationship && !isAutogenerateId;
+  }
+
+  @override
+  String toString() {
+    return "$name: joinType: ${this.joinRecordType}, dartType: ${dartTypeName}";
   }
 }
 
@@ -202,6 +293,7 @@ const mapping = {
   'uri': 'Uri',
   'iref': 'IRef',
   'timestamp': 'DateTime',
+  'datetime': 'DateTime',
 };
 
 extension ArgListNode on List<InputValueDefinitionNode> {
@@ -221,7 +313,7 @@ extension SelectionSetSerializer on SelectionSetNode {
       str += '${indent.indent()}${node.serialize(indent)}';
     }
 
-    return str;
+    return '$str\n';
   }
 }
 
@@ -270,10 +362,77 @@ extension RawTypeNodeExt on Node {
   }
 }
 
+List<Method> getterSetter(String name, String type, {bool isAbstract = true}) {
+  return [
+    getter(name, type, isAbstract: isAbstract),
+    setter(name, type, isAbstract: isAbstract),
+  ];
+}
+
+Method getter(String name, String type, {bool isAbstract = true}) {
+  return Method((m) => m
+    ..name = name
+    ..type = MethodType.getter
+    ..returns = refer(type)
+    ..body = isAbstract ? null : Code('return this.$name;'));
+}
+
+Method setter(String name, String type, {bool isAbstract = true}) {
+  return Method((m) => m
+    ..name = name
+    ..type = MethodType.setter
+    ..requiredParameters.add(Parameter((p) => p
+      ..type = refer(type)
+      ..name = name))
+    ..body = isAbstract ? null : Code('this.$name = $name;'));
+}
+
+FieldNode fieldNode(String name, {Iterable selectionSet = const []}) {
+  return FieldNode(
+      name: name.toNameNode(),
+      selectionSet: SelectionSetNode(
+        selections: [
+          for (var selection in selectionSet)
+            if (selection is String)
+              if (selection.startsWith("..."))
+                FragmentSpreadNode(name: selection.substring(3).toNameNode())
+              else
+                FieldNode(name: selection.toNameNode())
+            else if (selection is SelectionNode)
+              selection
+            else
+              illegalState("Invalid selectionSet type: ${selection.runtimeType}"),
+        ],
+      ));
+}
+
+DirectiveNode directiveNode(String name, {Map<String, Object?> args = const {}}) {
+  return DirectiveNode(name: NameNode(value: name), arguments: [
+    for (var entry in args.entries) ArgumentNode(name: NameNode(value: entry.key), value: entry.value.toValueNode()),
+  ]);
+}
+
+extension SGQLDirectivesNode on DirectiveNode {
+  ValueNode? getArgument(String key) =>
+      this.arguments.where((element) => element.name.value == key).map((arg) => arg.value).firstOr();
+}
+
 extension ListDirectivesNode on Iterable<DirectiveNode> {
-  String? getString(String directive, String argument) => getDirectiveValue(directive, argument)?.stringValue;
-  Iterable<String> getStrings(String directive, String argument) =>
-      getDirectiveValues(directive, argument).map((value) => value.stringValue).whereType<String>();
+  Set<String> get interfaceNames => getList<String>('interfaces', 'name', 'names').toSet();
+  Set<String> get interfaceApiNames => getList<String>('interfaces', 'api', 'apis').toSet();
+  Set<String> get interfaceInputNames => getList<String>('interfaces', 'input', 'inputs').toSet();
+  Set<String> get mixinNames => getList<String>('mixin', 'name', 'names').toSet();
+  Set<String> get mixinApiNames => getList<String>('mixin', 'api', 'apis').toSet();
+  Set<String> get mixinInputNames => getList<String>('mixin', 'input', 'inputs').toSet();
+
+  String? getString(String directive, String argument) => getDirectiveValue(directive, argument).get();
+  List<T> getList<T extends Object>(String directive, String argument, [String? argument2, String? argument3]) => <T?>[
+        for (var argName in [argument, argument2, argument3].whereType<String>())
+          for (var value in getDirectiveValues(directive, argName)) ...[
+            value.tryGet<T>(),
+            ...value.tryGetList<T>(),
+          ],
+      ].whereType<T>().cast<T>().toList();
 
   DirectiveNode? getDirective(String name) => where((element) => element.name.value == name).firstOr();
   Iterable<DirectiveNode> getDirectives(String name) => where((element) => element.name.value == name);
@@ -296,6 +455,8 @@ extension FieldDefinitionNodeExt on FieldDefinitionNode {
 
   bool hasDirective(String name) => directives.any((element) => element.name.value == name);
 
+  bool missingDirective(String name) => !hasDirective(name);
+
   bool get isReadOnly => hasDirective('readonly');
 
   bool get isWriteOnly => hasDirective('writeOnly');
@@ -304,9 +465,11 @@ extension FieldDefinitionNodeExt on FieldDefinitionNode {
 
   bool get isEager => hasDirective('eager');
 
+  String? get eagerPrefix => getDirectiveValue("eager", "prefix").stringValueOrNull;
+
   bool get isId => hasDirective('id');
 
-  bool get isAutogenerateId => hasDirective('id') && getDirectiveValue('id', 'autogenerate')?.boolValue != false;
+  bool get isAutogenerateId => hasDirective('id') && getDirectiveValue('id', 'autogenerate').boolValue(true);
 
   bool get isLazy => hasDirective('lazy');
 }
@@ -320,29 +483,57 @@ extension TypeNodeListExt on Iterable<TypeNode> {
   }
 }
 
-extension ValueNodeExt on ValueNode {
-  String? get stringValue {
-    if (this is StringValueNode) {
-      return (this as StringValueNode).value;
-    } else if (this is NullValueNode) {
-      return null;
-    } else {
-      throw "Not a string value type.  Was${this.runtimeType}";
-    }
+extension ValueNodeExt on ValueNode? {
+  bool boolValue([bool defaultValue = false]) => get<bool?>() ?? defaultValue;
+  String get stringValue => get();
+  String? get stringValueOrNull => get();
+
+  T get<T extends Object?>() {
+    return _anyValue as T;
   }
 
-  bool? get boolValue {
-    if (this is BooleanValueNode) {
-      return (this as BooleanValueNode).value;
-    } else {
+  List<T> getList<T extends Object?>() {
+    return (_anyValue as List).whereType<T>().toList().cast<T>();
+  }
+
+  T? tryGet<T extends Object>() {
+    final val = _anyValue;
+    return val is T ? val : null;
+  }
+
+  List<T> tryGetList<T extends Object>() {
+    return tryGet<List>()?.whereType<T>().toList().cast<T>() ?? const [];
+  }
+
+  Object? get _anyValue {
+    final self = this;
+    if (self == null) return null;
+    if (self is BooleanValueNode) {
+      return self.value;
+    } else if (self is StringValueNode) {
+      return self.value;
+    } else if (self is IntValueNode) {
+      return self.value;
+    } else if (self is FloatValueNode) {
+      return self.value;
+    } else if (self is NullValueNode) {
       return null;
+    } else if (self is EnumValueNode) {
+      return self.name.value;
+    } else if (self is ListValueNode) {
+      return self.values.mapIndexed((item, index) => item._anyValue);
+    } else if (self is ObjectValueNode) {
+      return self.fields.map((f) => MapEntry<String, Object?>(f.name.value, f.value._anyValue)).toMap();
+    } else {
+      throw ArgumentError('Unable to extract from ${self.runtimeType} ValueNode');
     }
   }
 }
 
 extension TypeNodeExt on TypeNode {
   String toDartType({bool withNullability = true, bool forceOptional = false}) {
-    var nullSuffix = forceOptional ? '?' : "${!withNullability || this.isNonNull ? '' : '?'}";
+    var isOptional = forceOptional || (withNullability && !this.isNonNull);
+    var nullSuffix = isOptional ? '?' : '';
     if (this is NamedTypeNode) {
       var nt = this as NamedTypeNode;
       var typeName = mapping[nt.name.value.toLowerCase()] ?? nt.name.value;
@@ -414,12 +605,12 @@ extension FieldNodeToParam on FieldDefinition {
     bool named = true,
     bool forceOptional = false,
   }) {
+    var dartOrListType = this.dartTypeName;
+    if (forceOptional && !dartOrListType.endsWith("?")) {
+      dartOrListType += "?";
+    }
     return Parameter((p) => p
-      ..type = isThis
-          ? null
-          : refer(typeNode.toDartType(
-              forceOptional: forceOptional,
-            ))
+      ..type = isThis ? null : refer(dartOrListType)
       ..name = mappedName
       ..toThis = isThis
       ..named = named
@@ -479,3 +670,37 @@ Field SimpleField(String name, String type, {FieldModifier? modifier}) => Field(
         field.modifier = modifier;
       }
     });
+
+extension ObjectToValueNode on Object? {
+  ValueNode toValueNode() {
+    final self = this;
+    if (self == null) return const NullValueNode();
+    if (self is String) {
+      return StringValueNode(value: self, isBlock: false);
+    } else if (self is int) {
+      return IntValueNode(value: self.toString());
+    } else if (self is num) {
+      return FloatValueNode(value: self.toString());
+    } else if (self is Iterable<Object?>) {
+      return ListValueNode(values: self.map((e) => e.toValueNode()).toList());
+    } else if (self is Map<Object?, Object?>) {
+      return ObjectValueNode(
+          fields: self.entries
+              .map((entry) => ObjectFieldNode(
+                    name: entry.key.toString().toNameNode(),
+                    value: entry.value.toValueNode(),
+                  ))
+              .toList());
+    } else {
+      throw "Don't know how to create value node from ${this.runtimeType}";
+    }
+  }
+}
+
+extension StringToNode on String {
+  NamedTypeNode toNamedType({bool? isNonNull}) => NamedTypeNode(
+        name: this.toNameNode(),
+        isNonNull: isNonNull ?? this.endsWith('!'),
+      );
+  NameNode toNameNode() => NameNode(value: this);
+}

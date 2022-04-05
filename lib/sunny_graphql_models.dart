@@ -1,17 +1,30 @@
-import 'dart:developer';
+import 'package:collection_diff/collection_diff.dart';
 import 'package:dartxx/dartxx.dart';
+import 'package:equatable/equatable.dart';
 import 'package:gql/ast.dart';
-import 'package:gql/language.dart' as lang;
 import 'package:graphql_flutter/graphql_flutter.dart';
+import 'package:inflection3/inflection3.dart';
+import 'package:sunny_graphql/fragments.dart';
 import 'package:sunny_sdk_core/api_exports.dart';
 import 'package:sunny_sdk_core/mverse.dart';
 import 'package:sunny_sdk_core/mverse/m_base_model.dart';
-import 'package:inflection3/inflection3.dart';
 
 import 'graph_client_config.dart';
-import 'graph_client_serialization.dart';
 
-mixin GraphInputMixin implements GraphInput {
+extension NullableObjectGraphQLExt on Object? {
+  Map<String, Object?>? asObjectMap() => this as Map<String, Object?>?;
+}
+
+extension NonNullObjectGraphQLExt on Object {
+  Map<String, Object?> asObjectMap() => this as Map<String, Object?>;
+
+  Object withoutKey(String key) {
+    this.asObjectMap().remove(key);
+    return this;
+  }
+}
+
+abstract class BaseGraphInput with MBaseModelMixin implements GraphInput {
   T get<T>(String key) {
     return this[key] as T;
   }
@@ -25,26 +38,29 @@ mixin GraphInputMixin implements GraphInput {
 
 abstract class GraphInput implements MBaseModel {
   void operator []=(key, dynamic value);
+
   dynamic operator [](key);
+
   T get<T>(String key);
+
   Map<String, dynamic>? toJson();
 
-  // Object? relatedJson();
+// Object? relatedJson();
 }
 
 DocumentNode DocumentNodes(List<DocumentNode> nodes) {
   return DocumentNode(definitions: [...nodes.expand((n) => n.definitions)]);
 }
 
-mixin JoinTypeMixin<N extends Entity> {
+mixin JoinTypeMixin<N extends BaseSunnyEntity> {
   N? get node;
 
   String? get id => node?.mkey?.mxid;
 
-  dynamic toJson();
+  Object? toJson();
 }
 
-abstract class BaseSunnyEntity with MBaseModelMixin {
+abstract class BaseSunnyEntity with MBaseModelMixin, DiffDelegateMixin {
   String? get id;
 
   // Map<String, dynamic> toMap();
@@ -53,7 +69,9 @@ abstract class BaseSunnyEntity with MBaseModelMixin {
     return id == null ? null : MKey.fromType(mtype, id!);
   }
 
-  Map<String, dynamic> toMap();
+  Map<String, Object?> toMap();
+
+  Object? toJson();
 
   dynamic operator [](key) => throw "Not implemented";
 
@@ -84,216 +102,288 @@ abstract class BaseSunnyEntity with MBaseModelMixin {
     throw "Not implemented";
   }
 
-  void takeFromMap(Map<String, dynamic> map, {bool copyEntries = true}) {
-    map.forEach((key, value) {
+  void takeFromMap(Map<String, dynamic>? map, {bool copyEntries = true}) {
+    map?.forEach((key, value) {
       this[key] = value;
     });
   }
+
+  @override
+  dynamic get diffKey => id;
+
+  @override
+  dynamic get diffSource => toJson();
 }
 
 abstract class GraphQueryResolver {
   DocumentNode? getQuery(String name);
 
-  DocumentNode? getOperation(String entityName, String op) => getQuery('${entityName}${op.capitalize()}Op');
+  GraphOperation? getOperation(String entityName, String op);
+
+  DocumentNode getOrCreateQuery(String name, String type, String gql());
+  DocumentNode getOrBuildQuery(String name, String type, OperationDefinitionNode gql());
 }
 
-abstract class GraphApi<T extends BaseSunnyEntity, C extends GraphInput, U extends GraphInput> {
-  GraphQLClient client();
+class Neo4JGraphQueryResolver with FragmentManager implements GraphQueryResolver {
+  final _queries = <String, GraphOperation>{};
 
-  GraphSerializer get serializer;
-
-  GraphQueryResolver get resolver;
-
-  MSchemaRef get mtype;
-
-  String get entityName => mtype.artifactId!.capitalize();
-  String get entityPlural => pluralize(entityName);
-
-  String get artifactId => mtype.artifactId!;
-  String get artifactPlural => pluralize(artifactId);
-
-  final Map<String, DocumentNode> _relatedQueries = {};
-
-  Future<T> create(C input) async {
-    var result = await this.client().queryManager.mutate(MutationOptions(
-        document: resolver.getOperation(entityName, 'create')!,
-        operationName: "create${entityName}",
-        variables: {"input": input.toJson()}));
-
-    if (result.hasException) {
-      throw result.exception!;
-    }
-
-    return this.serializer.read(result.data!["create${entityPlural}"]["${entityPlural.uncapitalize()}"][0],
-        typeName: entityName, isNullable: false);
+  @override
+  GraphOperation? getOperation(String entityName, String op) {
+    var queryName = '${op.uncapitalize()}${entityName}';
+    return _queries.putIfAbsent(queryName, () {
+      switch (op) {
+        case 'create':
+          return _buildCreateQuery(entityName, queryName);
+        case 'update':
+          return _buildUpdateQuery(entityName, queryName);
+        case 'delete':
+          return _buildDeleteQuery(entityName, queryName);
+        case 'list':
+          return buildListQuery(entityName, queryName);
+        case 'load':
+          return _buildLoadQuery(entityName, queryName);
+        case 'count':
+          return _buildCountQuery(entityName, queryName);
+        default:
+          throw 'No query could be created';
+      }
+    });
   }
 
-  Future<T> update(String id, U input) async {
-    final _update = input.toJson();
-    print("id: $id");
-    print(json.encode(_update));
-    var result = await this.client().queryManager.mutate(MutationOptions(
-            document: resolver.getOperation(entityName, 'update')!,
-            operationName: "update${entityName}",
-            variables: {
-              "id": id,
-              "update": _update,
-            }));
-
-    if (result.hasException) {
-      throw result.exception!;
-    }
-
-    return this
-        .serializer
-        .read(result.data!["update${entityPlural}"]["${artifactPlural}"][0], typeName: entityName, isNullable: false);
-  }
-
-  Future<int> delete(String id) async {
-    var result = await this.client().queryManager.mutate(
-          MutationOptions(
-            document: resolver.getOperation(entityName, 'delete')!,
-            operationName: "delete${entityName}",
-            variables: {"id": id},
-          ),
-        );
-
-    if (result.hasException) {
-      throw result.exception!;
-    }
-
-    return result.data!["delete${entityPlural}"]['nodesDeleted'] as int;
-  }
-
-  Future<List<T>> list([Object filters = const {}]) async {
-    var result = await this.client().queryManager.mutate(MutationOptions(
-        document: resolver.getOperation(entityName, 'list')!, operationName: "list${entityName}", variables: {"where": filters}));
-
-    if (result.hasException) {
-      throw result.exception!;
-    }
-
-    return this.serializer.readList(
-          result.data![entityPlural.uncapitalize()],
-          typeName: entityName,
-          isNullable: false,
-        );
-  }
-
-  Future<T?> load(String id) async {
-    var result = await this.client().queryManager.mutate(MutationOptions(
-        document: resolver.getOperation(entityName, 'load')!, operationName: "load${entityName}", variables: {"id": id}));
-
-    if (result.hasException) {
-      throw result.exception!;
-    }
-    var list = result.data!["${artifactPlural}"] as List?;
-    return this.serializer.read(list?.firstOr(), typeName: entityName, isNullable: true);
-  }
-
-  Future<T> getOrCreate(String id, {required C create()}) async {
-    final existing = await load(id);
-    return existing ?? await this.create(create());
-  }
-
-  Future<T> get(String id) async {
-    final record = await load(id);
-    return record ?? nullPointer('No $entityName record for $id');
-  }
-
-  Future<double> count() async {
-    var result = await this.client().queryManager.mutate(MutationOptions(
-        document: resolver.getOperation(entityName, 'count')!, operationName: "count${entityPlural}", variables: {}));
-
-    if (result.hasException) {
-      throw result.exception!;
-    }
-
-    return result.data!["${artifactPlural}Count"] as double;
-  }
-
-  Future<T> loadRelated<T>(
-      {required String id,
-      required String relatedType,
-      required String field,
-      required bool isNullable,
-      required DocumentNode fragments}) async {
-    final loaded = await _executeLoadRelated(id: id, relatedType: relatedType, fieldName: field, fragments: fragments);
-    return this.serializer.read<T>(loaded, typeName: relatedType, isNullable: isNullable);
-  }
-
-  //
-  // Future<T> updateRelated<T>({
-  //   required String id,
-  //   Map<String, RefInput> related,
-  // }) async {
-  //   final loaded = await _executeLoadRelated(id: id, relatedType: relatedType, fieldName: field, fragments: fragments);
-  //   return this.serializer.read<T>(loaded, typeName: relatedType, isNullable: isNullable);
-  // }
-
-  Future<List<T>> loadRelatedList<T>(
-      {required String id,
-      required String relatedType,
-      required bool isNullable,
-      required String field,
-      required DocumentNode fragments}) async {
-    final raw = await _executeLoadRelated(id: id, relatedType: relatedType, fieldName: field, fragments: fragments);
-    return this.serializer.readList<T>(raw, typeName: relatedType, isNullable: isNullable);
-  }
-
-  DocumentNode _getOrCreateRelatedQuery({required String relatedType, required String fieldName, required String queryName}) {
-    return _relatedQueries.putIfAbsent(fieldName, () => gql("""
-      query ${queryName}(\$id: ID!) {
-        ${artifactPlural}(where: {id: \$id}) {
-          ${fieldName} {
-            ...${relatedType}Fragment
-          }
+  GraphOperation _buildCreateQuery(String entityName, String queryName) {
+    final plural = pluralize(entityName);
+    return GraphOperation(queryName, GraphOperations.create, this.operation("""
+    mutation $queryName(\$input: ${entityName}CreateInput!) {
+      create${plural}(input: [\$input]) {
+        ${plural.uncapitalize()} {
+          ...${entityName}Fragment
         }
       }
-      """));
+    }
+    """));
   }
 
-  Future _executeLoadRelated({
-    required String id,
+  GraphOperation _buildUpdateQuery(String entityName, String queryName) {
+    final plural = pluralize(entityName);
+    final pluralArtifact = plural.uncapitalize();
+    return GraphOperation(queryName, GraphOperations.update, this.operation("""
+    mutation $queryName(\$id: ID!, \$update: ${entityName}UpdateInput!) {
+        update${plural}(where: {id: \$id}, update: \$update) {
+          $pluralArtifact {
+            ...${entityName}Fragment
+          }
+        }
+    }
+    """));
+  }
+
+  GraphOperation _buildDeleteQuery(String entityName, String queryName) {
+    final plural = pluralize(entityName);
+    return GraphOperation(
+      queryName,
+      GraphOperations.delete,
+      this.operation("""
+    
+    mutation $queryName(\$id: ID!) {
+      delete$plural(where: {id: \$id}) {
+        nodesDeleted
+      }
+    }
+    """),
+    );
+  }
+
+  OperationDefinitionNode buildListRelatedQuery({
+    required String thisType,
     required String relatedType,
     required String fieldName,
-    required DocumentNode fragments,
-  }) async {
-    DocumentNode? doc;
-    try {
-      final queryName = "load${entityName}${fieldName.capitalize()}";
-      final gqlQuery = _getOrCreateRelatedQuery(
-        relatedType: relatedType,
-        fieldName: fieldName,
-        queryName: queryName,
-      );
+    required String queryName,
+    Map<String, Object?>? where,
+  }) {
+    final rootWhere = {
+      'id': VariableNode(name: NameNode(value: 'id')),
+    };
 
-      doc = DocumentNodes([gqlQuery, fragments]);
+    final artifactPlural = pluralize(thisType.uncapitalize());
+    return OperationDefinitionNode(
+      type: OperationType.query,
+      name: NameNode(value: queryName),
+      variableDefinitions: [
+        VariableDefinitionNode(
+          defaultValue: DefaultValueNode(value: null),
+          variable: VariableNode(name: NameNode(value: "id")),
+          type: NamedTypeNode(
+            name: NameNode(value: "ID"),
+            isNonNull: true,
+          ),
+        )
+      ],
+      selectionSet: SelectionSetNode(
+        selections: [
+          FieldNode(
+            name: NameNode(value: artifactPlural),
+            arguments: [
+              ArgumentNode(name: NameNode(value: "where"), value: rootWhere.toValueNode()),
+            ],
+            selectionSet: SelectionSetNode(
+              selections: [
+                FieldNode(
+                  name: NameNode(value: fieldName),
+                  arguments: [
+                    if (where?.isNotEmpty == true)
+                      ArgumentNode(
+                        name: NameNode(value: "where"),
+                        value: where.toValueNode(),
+                      ),
+                  ],
+                  selectionSet: SelectionSetNode(
+                    selections: [
+                      FragmentSpreadNode(name: NameNode(value: '${relatedType}Fragment')),
+                    ],
+                  ),
+                )
+              ],
+            ),
+          )
+        ],
+      ),
+    );
+  }
 
-      // print('START! $queryName');
-      var result =
-          await this.client().queryManager.query(QueryOptions(document: doc, operationName: queryName, variables: {"id": id}));
-
-      if (result.hasException) {
-        // print('FROM SERVER! ${result.exception}');
-        throw result.exception!;
+  GraphOperation buildListQuery(String entityName, String queryName) {
+    final plural = pluralize(entityName);
+    return GraphOperation(queryName, GraphOperations.list, this.operation("""
+    query $queryName(\$where: ${entityName}Where!) {
+      ${plural.uncapitalize()}(where: \$where) {
+        ...${entityName}Fragment
       }
+    }
+    """));
+  }
 
-      // print('END!');
+  GraphOperation _buildLoadQuery(String entityName, String queryName) {
+    final plural = pluralize(entityName);
+    return GraphOperation(queryName, GraphOperations.load, this.operation("""
+    query $queryName(\$id: ID!) {
+      ${plural.uncapitalize()}(where: {id: \$id}) {
+        ...${entityName}Fragment
+      }
+    }
+    """));
+  }
 
-      var r = GraphClientConfig.getDeep(result.data, "${artifactPlural}", 0, fieldName);
-      return r;
-    } catch (e) {
-      print('## -------------------------------------------------------');
-      print('## PRINTING FAILED!');
-      if (doc == null) print('## NO DOC!');
-      doc?.definitions.forEach((element) {
-        print(lang.printNode(element));
-        print('##---------------------------------------------------');
-      });
-      print('##-------------------------------------------------------');
+  GraphOperation _buildCountQuery(String entityName, String queryName) {
+    final plural = pluralize(entityName);
+    return GraphOperation(queryName, GraphOperations.count, this.operation("""
+    query $queryName {
+      ${plural.uncapitalize()}Count
+    }
+    """));
+  }
 
-      rethrow;
+  DocumentNode operation(String operation) {
+    final document = gql(operation);
+    return DocumentNode(definitions: [
+      ...document.definitions,
+      ...getFragmentsForOperation(document.firstOp),
+    ]);
+  }
+
+  DocumentNode operationFromNode(OperationDefinitionNode operation) {
+    return DocumentNode(definitions: [
+      operation,
+      ...getFragmentsForOperation(operation),
+    ]);
+  }
+
+  @override
+  DocumentNode? getQuery(String name) {
+    return _queries[name]?.operation;
+  }
+
+  @override
+  DocumentNode getOrCreateQuery(String name, String type, String Function() generateQuery) {
+    return _queries.putIfAbsent(name, () {
+      final document = this.operation(generateQuery());
+      return GraphOperation(name, type, document);
+    }).operation;
+  }
+
+  @override
+  DocumentNode getOrBuildQuery(String name, String type, OperationDefinitionNode Function() generateQuery) {
+    return _queries.putIfAbsent(name, () {
+      final document = this.operationFromNode(generateQuery());
+      return GraphOperation(name, type, document);
+    }).operation;
+  }
+}
+
+class GraphOperations {
+  static const create = 'create';
+  static const update = 'update';
+  static const delete = 'delete';
+  static const load = 'load';
+  static const list = 'list';
+  static const count = 'count';
+  static const listRelated = 'listRelated';
+
+  GraphOperations._();
+}
+
+class GraphOperation with EquatableMixin {
+  final String operationType;
+  final DocumentNode operation;
+  final String operationName;
+
+  GraphOperation(
+    this.operationName,
+    this.operationType,
+    this.operation,
+  );
+
+  @override
+  List<Object> get props => [operation, operationName, operationType];
+
+  bool get isMutate {
+    switch (this.operationType) {
+      case GraphOperations.delete:
+      case GraphOperations.update:
+      case GraphOperations.create:
+        return true;
+      default:
+        return false;
+    }
+  }
+}
+
+extension DocumentNodeOperationGetter on DocumentNode {
+  OperationDefinitionNode get firstOp => definitions.whereType<OperationDefinitionNode>().first;
+}
+
+extension _ObjectToValueNode on Object? {
+  ValueNode toValueNode() {
+    final self = this;
+    if (self == null) return const NullValueNode();
+    if (self is String) {
+      return StringValueNode(value: self, isBlock: false);
+    } else if (self is int) {
+      return IntValueNode(value: self.toString());
+    } else if (self is num) {
+      return FloatValueNode(value: self.toString());
+    } else if (self is Iterable<Object?>) {
+      return ListValueNode(values: self.map((e) => e.toValueNode()).toList());
+    } else if (self is Map<Object?, Object?>) {
+      return ObjectValueNode(
+          fields: self.entries
+              .map((entry) => ObjectFieldNode(
+                    name: NameNode(value: entry.key.toString()),
+                    value: entry.value.toValueNode(),
+                  ))
+              .toList());
+    } else if (self is ValueNode) {
+      return self;
+    } else {
+      throw "Don't know how to create value node from ${this.runtimeType}";
     }
   }
 }

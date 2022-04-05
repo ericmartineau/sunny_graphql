@@ -1,5 +1,7 @@
+import 'package:code_builder/code_builder.dart';
 import 'package:gql/ast.dart';
 import 'package:logging/logging.dart';
+import 'package:equatable/equatable.dart';
 
 import 'shared.dart';
 
@@ -10,6 +12,9 @@ abstract class GraphQLScanResult {
   Map<String, ObjectTypeDefinitionNode> get objectTypes;
   Map<String, InterfaceTypeDefinitionNode> get interfaceTypes;
   Map<String, InputObjectTypeDefinitionNode> get inputTypes;
+  Map<String, UnionTypeDefinitionNode> get unionTypes;
+  Map<String, String> get typedefs;
+  Set<String> get joinRecords;
   Map<String, EnumTypeDefinitionNode> get enumTypes;
   Map<String, String> get typeMap;
   Map<String, Map<String, GraphSubQuery>> get subqueries;

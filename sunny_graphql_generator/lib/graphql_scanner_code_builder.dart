@@ -18,6 +18,9 @@ buildSerializer(GraphQLScanResult model, CodeBuilder code) {
       ...model.inputTypes.values.map((model) => model.name.value),
       ...model.objectTypes.values.map((model) => model.name.value),
       ...model.enumTypes.values.map((model) => model.name.value),
+      ...model.unionTypes.values.map((model) => model.name.value),
+      ...model.typedefs.keys,
+      ...model.joinRecords,
     ])
       '      case "${model}": return (_) => ${model}.fromJson(_);',
     '      default: return null;'
@@ -30,6 +33,9 @@ buildSerializer(GraphQLScanResult model, CodeBuilder code) {
       ...model.inputTypes.values.map((model) => model.name.value),
       ...model.objectTypes.values.map((model) => model.name.value),
       ...model.enumTypes.values.map((model) => model.name.value),
+      ...model.unionTypes.values.map((model) => model.name.value),
+      ...model.typedefs.keys,
+      ...model.joinRecords,
     ])
       '      case "${model}": return (from) => from?.toJson();',
     '      default: return null;',

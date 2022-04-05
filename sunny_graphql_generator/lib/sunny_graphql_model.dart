@@ -29,9 +29,12 @@ class SunnyGraphQLModel implements GraphQLScanResult {
   final query = <String, FieldDefinitionNode>{};
   final subQuery = <String, FieldDefinitionNode>{};
   final mutation = <String, FieldDefinitionNode>{};
+  final unionTypes = <String, UnionTypeDefinitionNode>{};
+  final typedefs = <String, String>{};
   final fragments = <String, FragmentDefinitionNode>{};
   final fragmentDepends = FragmentDependencies();
   final subqueries = <String, Map<String, GraphSubQuery>>{};
+  final joinRecords = <String>{};
   final NameMapper mapTypeName;
   final NameMapper mapFieldName;
   final Map<String, String> mixinMap;
@@ -269,12 +272,55 @@ class SunnyGraphQLModel implements GraphQLScanResult {
       checkDone(type.name.value);
     } else if (type is UnionTypeDefinitionNode) {
       checkDone(type.name.value);
+      unionTypes[type.name.value] = type;
       type.types.forEach((unionType) {
         extraInterfaces.putIfAbsent(unionType.name.value, () => {}).add(
               NamedTypeNode(
                 name: NameNode(value: (type as UnionTypeDefinitionNode).name.value),
               ),
             );
+        var fragmentName = '${type.name.value}Fragment';
+        UnionTypeDefinitionNode utype = type;
+        if (utype.directives.hasDirective("selection")) {
+          final prefix = utype.directives.getDirectiveValue("selection", "prefix").stringValue;
+          final fields = utype.directives.getDirectiveValue("selection", "fields").getList<String>();
+          var fragmentName = '${type.name.value}${prefix}Fragment';
+          fragments.putIfAbsent(
+            fragmentName,
+            () => FragmentDefinitionNode(
+              name: fragmentName.toNameNode(),
+              typeCondition: TypeConditionNode(on: utype.name.value.toNamedType()),
+              selectionSet: SelectionSetNode(selections: [
+                for (final u in utype.types)
+                  InlineFragmentNode(
+                    typeCondition: TypeConditionNode(on: u),
+                    selectionSet: SelectionSetNode(
+                      selections: [
+                        for (var field in fields) fieldNode(field),
+                      ],
+                    ),
+                  )
+              ]),
+            ),
+          );
+          // fragmentDepends.addAll(fragmentName, utype.types.map((t) => "${t.name.value}Fragment").toSet());
+        }
+        fragments.putIfAbsent(
+          fragmentName,
+          () => FragmentDefinitionNode(
+            name: fragmentName.toNameNode(),
+            typeCondition: TypeConditionNode(on: utype.name.value.toNamedType()),
+            selectionSet: SelectionSetNode(selections: [
+              for (final u in utype.types)
+                InlineFragmentNode(
+                    typeCondition: TypeConditionNode(on: u),
+                    selectionSet: SelectionSetNode(selections: [
+                      FragmentSpreadNode(name: '${u.name.value}Fragment'.toNameNode()),
+                    ]))
+            ]),
+          ),
+        );
+        fragmentDepends.addAll(fragmentName, utype.types.map((t) => "${t.name.value}Fragment").toSet());
       });
     } else if (type is DirectiveDefinitionNode) {
       // We ignore these on purpose

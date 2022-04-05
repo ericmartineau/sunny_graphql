@@ -7,6 +7,10 @@ class ReliveItGraphQLSerializers {
     switch (typeName) {
       case 'Uri':
         return (input) => Uri.parse(input.toString());
+      case 'DateTime':
+        return (input) => dateTimeOf(input);
+      case 'Timestamp':
+        return (input) => dateTimeOf(input);
       case 'FlexiDate':
         return (input) => FlexiDate.fromJson(input);
       default:

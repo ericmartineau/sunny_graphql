@@ -338,7 +338,7 @@ packages:
     source: hosted
     version: "1.0.0"
   flexidate:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: flexidate
       url: "https://pub.dartlang.org"
@@ -811,16 +811,16 @@ packages:
       name: sunny_dart
       url: "https://pub.dartlang.org"
     source: hosted
-    version: "0.10.0+2"
+    version: "0.10.0+4"
   sunny_graphql:
-    dependency: "direct main"
+    dependency: transitive
     description:
       path: "../.."
       relative: true
     source: path
     version: "1.0.1"
   sunny_graphql_generator:
-    dependency: "direct dev"
+    dependency: "direct main"
     description:
       path: ".."
       relative: true
@@ -832,7 +832,7 @@ packages:
       path: "../../../sunny_sdk_core"
       relative: true
     source: path
-    version: "2.1.0+3"
+    version: "2.2.0+4"
   term_glyph:
     dependency: transitive
     description:
@@ -841,7 +841,7 @@ packages:
     source: hosted
     version: "1.2.0"
   test_api:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
       name: test_api
       url: "https://pub.dartlang.org"

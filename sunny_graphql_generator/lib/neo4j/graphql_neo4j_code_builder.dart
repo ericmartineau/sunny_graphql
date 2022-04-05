@@ -23,7 +23,7 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
   model.model.addAllModels(
     code,
     inputGenerator: (c, name, fields, isAbstract) {
-      c.mixins.add(refer('GraphInputMixin'));
+      c.extend = refer('BaseGraphInput');
     },
     extraGenerator: (c, name, fields, isAbstract) {
       c.extend = refer('BaseSunnyEntity');
@@ -38,71 +38,6 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
 
   model.entities.forEach((objName, entity) {
     if (entity.ops.isEmpty) return;
-
-    code += [
-      """
-  final ${entity.name}CreateOp = gql(r\"\"\"
-    mutation create${entity.name}(\$input: ${entity.name}CreateInput!) {
-      create${entity.namePlural}(input: [\$input]) {
-        ${entity.namePlural.uncapitalize()} {
-          ...${entity.name}Fragment,
-        }
-      }
-    }
-  \"\"\");""",
-      "",
-      """
-  final ${entity.name}UpdateOp = gql(r\"\"\"
-    mutation update${entity.name}(\$id: ID!, 
-                                  \$update: ${entity.name}UpdateInput!
-                                  \$create: ${entity.name}RelationInput,
-                                  \$connect: ${entity.name}ConnectInput,
-                                  \$disconnect: ${entity.name}DisconnectInput,
-                                  \$delete: ${entity.name}DeleteInput,
-                                  ) {
-      update${entity.namePlural}(where: {id: \$id}, update: \$update, create: \$create, 
-                            connect: \$connect, disconnect: \$disconnect, delete: \$delete) {
-        ${entity.namePlural.uncapitalize()} {
-          ...${entity.name}Fragment,
-        }
-      }
-    }
-  \"\"\");""",
-      "",
-      """
-  final ${entity.name}DeleteOp = gql(r\"\"\"
-    mutation delete${entity.name}(\$id: ID!) {
-      delete${entity.namePlural}(where: {id: \$id}) {
-        nodesDeleted
-      }
-    }
-  \"\"\");""",
-      "",
-      """
-  final ${entity.name}ListOp = gql(r\"\"\"
-    query list${entity.name}(\$where: ${entity.name}Where!) {
-      ${entity.namePlural.uncapitalize()}(where: \$where) {
-        ...${entity.name}Fragment
-      }
-    }
-  \"\"\");""",
-      "",
-      """
-  final ${entity.name}LoadOp = gql(r\"\"\"
-    query load${entity.name}(\$id: ID!) {
-      ${entity.namePlural.uncapitalize()}(where: {id: \$id}) {
-        ...${entity.name}Fragment
-      }
-    }
-  \"\"\");""",
-      "",
-      """
-  final ${entity.name}CountOp = gql(r\"\"\"
-    query count${entity.namePlural} {
-      ${entity.namePlural.uncapitalize()}Count
-    }
-  \"\"\");""",
-    ];
 
     code += Class((c) => c
       ..name = '${objName.capitalize()}Api'
@@ -121,6 +56,9 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
           Parameter((p) => p
             ..name = "serializer"
             ..toThis = true),
+          Parameter((p) => p
+            ..name = "eventService"
+            ..toThis = true),
         ])))
       ..fields.addAll([
         Field((f) => f
@@ -131,11 +69,15 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
         Field((f) => f
           ..name = 'resolver'
           ..annotations.add(refer('override'))
-          ..type = refer('GraphQueryResolver')
+          ..type = refer('Neo4JGraphQueryResolver')
           ..modifier = FieldModifier.final$),
         Field((f) => f
           ..name = '_client'
           ..type = refer('GraphQLClientGetter')
+          ..modifier = FieldModifier.final$),
+        Field((f) => f
+          ..name = 'eventService'
+          ..type = refer('RecordEventService')
           ..modifier = FieldModifier.final$),
       ])
       ..methods.addAll([
@@ -145,24 +87,46 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
           ..returns = refer('MSchemaRef')
           ..body = Code('return ${objName.capitalize()}.ref;')),
         Method((m) => m
+          ..type = MethodType.getter
+          ..name = 'mfields'
+          ..returns = refer('Set<String>')
+          ..body = Code('return ${objName.capitalize()}Fields.values;')),
+        Method((m) => m
           ..annotations.add(refer('override'))
           ..name = 'client'
           ..returns = refer('GraphQLClient')
           ..body = Code('return this._client();')),
         // for (var op in entity.ops) ...buildOperationMethod(model.model, entity, subqueries, op),
         for (var sub in entity.fields.lazy)
-          Method(
-            (m) => m
-              ..name = 'load${sub.name.capitalize()}ForRecord'
-              ..returns = refer(sub.nullableDartTypeName).future()
-              ..requiredParameters.add(IdParameter)
-              ..body = Code(
-                  'return this.loadRelated${sub.isList ? 'List' : ''}(id: id, relatedType: "${sub.typeNode.toRawType()}", isNullable: ${!sub.isNonNull}, field: "${sub.name}", '
-                  'fragments: DocumentNodes([${[...model.model.fragmentDepends[sub.typeNode.toRawType()]].join(', ')}],),);'),
-          ),
+          if (sub.relationship?.propsType == null)
+            Method(
+              (m) => m
+                ..name = 'load${sub.name.capitalize()}ForRecord'
+                ..returns = refer(sub.nullableDartTypeName).future()
+                ..requiredParameters.add(IdParameter)
+                ..body = Code(
+                    'return this.loadRelated${sub.isList ? 'List' : ''}(id: id, relatedType: "${sub.typeNode.toRawType()}", isNullable: ${!sub.isNonNull}, field: "${sub.name}", isJoinType: false,);'),
+            )
+          else ...[
+            // Method(
+            //   (m) => m
+            //     ..name = 'load${sub.relationship?.propsType}ForRecord'
+            //     ..returns = refer(sub.isList ? 'List<${sub.relationship?.joinTypeName}>' : sub.nullableDartTypeName).future()
+            //     ..requiredParameters.add(IdParameter)
+            //     ..body = Code(
+            //         'return this.loadRelated${sub.isList ? 'List' : ''}(id: id, relatedType: "${sub.relationship?.joinTypeName}", isNullable: ${!sub.isNonNull}, field: "${sub.name}Connection",);'),
+            // ),
+            Method(
+              (m) => m
+                ..name = 'load${sub.name.capitalize()}ForRecord'
+                ..returns = refer(sub.isList ? 'List<${sub.joinRecordType}>' : sub.nullableDartTypeName).future()
+                ..requiredParameters.add(IdParameter)
+                ..body = Code(
+                    'return this.loadRelated${sub.isList ? 'List' : ''}(id: id, relatedType: "${sub.joinRecordType}", isNullable: ${!sub.isNonNull}, field: "${sub.name}Connection", isJoinType: true,);'),
+            ),
+          ],
       ]));
   });
-
   buildSerializer(model.model, code);
   buildResolver(model, code);
   return code;
@@ -170,52 +134,24 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
 
 buildResolver(GraphQLNeo4Model neo, CodeBuilder code) {
   final model = neo.model;
-  CodeBuilder cases = CodeBuilder();
-  for (var entity in neo.entities.values) {
-    getFragments(String op) {
-      return 'DocumentNodes([${['${entity.name}${op.capitalize()}Op', ...model.fragmentDepends[entity.name]].join(', ')}])';
-    }
 
-    entity.ops.forEach((element) {
-      switch (element) {
-        case GraphOpType.create:
-          cases += "    case '${entity.name}CreateOp': return ${getFragments('create')};";
-          break;
-        case GraphOpType.update:
-          cases += "    case '${entity.name}UpdateOp': return ${getFragments('update')};";
-          break;
-        case GraphOpType.delete:
-          cases += "    case '${entity.name}DeleteOp': return ${entity.name}DeleteOp;";
-          break;
-        case GraphOpType.list:
-          cases += "    case '${entity.name}ListOp': return ${getFragments('list')};";
-          cases += "    case '${entity.name}LoadOp': return ${getFragments('load')};";
-          break;
-        case GraphOpType.count:
-          cases += "    case '${entity.name}CountOp': return ${entity.name}CountOp;";
-          break;
-      }
-    });
-  }
-  code += Class(
-    (c) => c
-      ..name = '${neo.moduleName.capitalize()}QueryResolver'
-      ..extend = refer('GraphQueryResolver')
-      ..methods.add(
-        Method(
-          (f) => f
-            ..name = 'getQuery'
-            ..returns = refer('DocumentNode?')
-            ..requiredParameters.add(Parameter((p) => p
-              ..name = 'queryName'
-              ..type = refer('String')))
-            ..body = Code("""
-      switch(queryName) {
-        ${cases.toString()}
-        default: return null;
-      }
-      """),
-        ),
+  code += Class((c) => c
+    ..name = '${neo.moduleName.capitalize()}QueryResolver'
+    ..extend = refer('Neo4JGraphQueryResolver')
+    ..constructors.add(
+      Constructor(
+        (c) => c
+          ..body = CodeBuilder.lines(
+            [
+              'this.initializeFragments(',
+              '  fragments: [${{
+                ...model.fragments.keys.map((field) => "$field"),
+                ...neo.externalFragments,
+              }.join(',\n      ')}',
+              '  ],',
+              ');',
+            ],
+          ),
       ),
-  );
+    ));
 }

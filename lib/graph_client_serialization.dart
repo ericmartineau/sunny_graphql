@@ -8,8 +8,8 @@ typedef EntityWriterFactory = EntityWriter? Function(String name);
 
 abstract class GraphSerializer {
   dynamic write(dynamic input, {required String typeName, required bool isList});
-  T read<T>(dynamic input, {required String typeName, required bool isNullable});
-  List<T> readList<T>(dynamic input, {required String typeName, required bool isNullable});
+  T read<T>(dynamic input, {String? typeName, required bool isNullable});
+  List<T> readList<T>(dynamic input, {String? typeName, required bool isNullable});
 }
 
 class FactoryGraphSerializer implements GraphSerializer {
@@ -44,11 +44,16 @@ class FactoryGraphSerializer implements GraphSerializer {
   }
 
   @override
-  T read<T>(dynamic input, {required String typeName, required bool isNullable}) {
+  T read<T>(dynamic input, {String? typeName, required bool isNullable}) {
+    typeName ??= '$T';
     if (isNullable && input == null) {
-      return null as T;
+      if(null is T) {
+        return null as T;
+      };
+
+      throw StateError("Found a null value, but expected a $typeName");
     }
-    final factory = _readerFactories.map((e) => e(typeName)).firstWhere(
+    final factory = _readerFactories.map((e) => e(typeName!)).firstWhere(
           (element) => element != null,
           orElse: () => (dynamic input) => input,
         );
@@ -60,14 +65,20 @@ class FactoryGraphSerializer implements GraphSerializer {
   }
 
   @override
-  List<T> readList<T>(dynamic input, {required String typeName, required bool isNullable}) {
-    final factory = _readerFactories.map((e) => e(typeName)).firstWhere(
+  List<T> readList<T>(dynamic input, {String? typeName, required bool isNullable}) {
+    typeName ??= '$T';
+    final factory = _readerFactories.map((e) => e(typeName!)).firstWhere(
           (element) => element != null,
           orElse: () => (dynamic input) => input,
         );
 
     return <T>[
-      ...?(input as Iterable?)?.map((e) => factory!(e) as T),
+      ...?(input as Iterable?)?.map((e) {
+        final converted = factory!(e);
+        assert(converted is T,
+            "Factory didn't convert ${e?.runtimeType} into a ${T} for type: '${typeName}, instead was ${e?.runtimeType}");
+        return converted as T;
+      }),
     ];
   }
 }

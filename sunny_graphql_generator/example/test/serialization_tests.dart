@@ -60,7 +60,7 @@ Future main() async {
 
   test("input adds type wrapper", () {
     final phase = PhaseCreateInput();
-    phase.phased = GraphRef.connect('1234', 'Contact');
+    // phase.phased = GraphRef.connect('1234', 'Contact');
     expect(phase.toJson(), isNotNull);
     expect(
         phase.toJson()!,
@@ -87,7 +87,7 @@ Future main() async {
     tribe.members = ExtGraphRefList.single(
         connect: ExtGraphRef.connect(
             "1234",
-            TribeMember(
+            TribeMemberDetails(
               joined: false,
               isAdmin: true,
               requested: true,
@@ -100,9 +100,9 @@ Future main() async {
       equals(
         <String, dynamic>{
           "displayName": 'My Display Name',
-          'members': [
-            {
-              'connect': {
+          'members': {
+            'connect': [
+              {
                 'where': {
                   'node': {'id': '1234'}
                 },
@@ -112,12 +112,10 @@ Future main() async {
                   'requested': true,
                   'role': null,
                   'isAdmin': true,
-                  'dateCreated': null,
-                  'dateModified': null
                 }
               }
-            }
-          ]
+            ]
+          }
         },
       ),
     );
@@ -125,10 +123,10 @@ Future main() async {
 
   test("UpdateInput relatedJson adds special connection fields", () {
     final tribe = TribeUpdateInput();
-    tribe.members = ExtGraphRefList.all(connect: [
+    tribe.members = TribeMemberRefList.list(connect: [
       ExtGraphRef.connect(
         "1234",
-        TribeMember(
+        TribeMemberDetails(
           joined: false,
           isAdmin: true,
           requested: true,
@@ -136,7 +134,7 @@ Future main() async {
       ),
       ExtGraphRef.create(
         ContactCreateInput()..displayName = "Billy Bobbers",
-        TribeMember(
+        TribeMemberDetails(
           joined: false,
           isAdmin: true,
           requested: true,
@@ -151,9 +149,9 @@ Future main() async {
         combined,
         equals(<String, dynamic>{
           'displayName': 'My Display Name',
-          'members': [
-            {
-              'connect': {
+          'members': {
+            'connect': [
+              {
                 'where': {
                   'node': {'id': '1234'}
                 },
@@ -163,13 +161,11 @@ Future main() async {
                   'requested': true,
                   'role': null,
                   'isAdmin': true,
-                  'dateCreated': null,
-                  'dateModified': null
                 }
               }
-            },
-            {
-              'create': {
+            ],
+            'create': [
+              {
                 'node': {'displayName': 'Billy Bobbers'},
                 'edge': {
                   'node': null,
@@ -177,12 +173,10 @@ Future main() async {
                   'requested': true,
                   'role': null,
                   'isAdmin': true,
-                  'dateCreated': null,
-                  'dateModified': null
                 }
               }
-            }
-          ],
+            ],
+          }
         }));
   });
   test("input relatedJson handles relationships", () {

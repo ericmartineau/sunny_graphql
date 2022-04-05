@@ -1,4 +1,3 @@
-import 'package:example/graphql_stuff.dart';
 import 'package:example/pages/contacts_page.dart';
 import 'package:example/pages/families_page.dart';
 import 'package:example/providers.dart';
@@ -14,10 +13,11 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      child: CupertinoApp(
-        title: 'Graph Stuff',
-        home: MyHomePage(title: 'Graph Stuff Page'),
-      ),
+      child: GraphQLProviders(
+          builder: (BuildContext context) => CupertinoApp(
+                title: 'Graph Stuff',
+                home: MyHomePage(title: 'Graph Stuff Page'),
+              )),
     );
   }
 }
@@ -56,27 +56,25 @@ class _MyHomePageState extends State<MyHomePage> {
     // The Flutter framework has been optimized to make rerunning build methods
     // fast, so that you can just rebuild anything that needs updating rather
     // than having to individually change instances of widgets.
-    return GraphQLProviders(
-      builder: (BuildContext context) => DefaultTabController(
-        length: 2,
-        child: CupertinoTabScaffold(
-          tabBar: CupertinoTabBar(
-            onTap: (tab) {
-              if (tab != _tab) {
-                setState(() {
-                  this._tab = tab;
-                });
-              }
-            },
-            items: [
-              BottomNavigationBarItem(icon: Icon(CupertinoIcons.list_bullet), label: "Contacts"),
-              BottomNavigationBarItem(icon: Icon(CupertinoIcons.profile_circled), label: "Families"),
-            ],
-          ),
-          tabBuilder: (BuildContext context, int index) {
-            return index == 1 ? FamiliesPage() : ContactsPage();
+    return DefaultTabController(
+      length: 2,
+      child: CupertinoTabScaffold(
+        tabBar: CupertinoTabBar(
+          onTap: (tab) {
+            if (tab != _tab) {
+              setState(() {
+                this._tab = tab;
+              });
+            }
           },
+          items: [
+            BottomNavigationBarItem(icon: Icon(CupertinoIcons.list_bullet), label: "Contacts"),
+            BottomNavigationBarItem(icon: Icon(CupertinoIcons.profile_circled), label: "Families"),
+          ],
         ),
+        tabBuilder: (BuildContext context, int index) {
+          return index == 1 ? FamiliesPage() : ContactsPage();
+        },
       ),
     );
   }

@@ -1,5 +1,6 @@
 import 'package:flexidate/flexidate.dart';
 import 'package:gql/ast.dart';
+import 'package:gql/ast.dart' as ast;
 import 'package:graphql/client.dart';
 import 'package:dartxx/dartxx.dart';
 import 'package:sunny_graphql/sunny_graphql.dart';
@@ -7,6 +8,7 @@ import 'package:sunny_graphql/refs.dart';
 import 'package:sunny_graphql/sunny_graphql_annotations.dart';
 import 'package:sunny_sdk_core/mverse.dart';
 import 'package:sunny_sdk_core/mverse/m_base_model.dart';
+import 'package:sunny_sdk_core/data.dart';
 
 part 'graphql_stuff.g.dart';
 
@@ -15,37 +17,70 @@ abstract class IRef {
   String get displayName;
 }
 
+typedef FormatValue = dynamic;
+
+abstract class HasPhases {}
+
+final MyFragment = gql("""
+fragment SuperSimpleRef on Ref {
+  __typename
+}
+""").definitions.first as ast.FragmentDefinitionNode;
+
+abstract class ContactApiMixin {}
+
+abstract class TribeApiMixin {}
+
 @graphQL(
   moduleName: 'reliveIt',
   uri: "./lib/schema.graphql",
   fragmentUri: './lib/fragments.graphql',
   typeMap: {
     'IRef': 'IRef',
-    'fd': '132',
+    'IFact': 'IFact',
+    'fd': 's213d123',
   },
   fieldNameMappers: fieldSuffixes,
   typeNameMappers: typeNameMap,
+  fragments: ['MyFragment'],
   excludes: const [
     '.*Count\$',
   ],
 )
 abstract class _GraphQLStuff {}
 
+mixin ISpecialEventMixin {}
 mixin PhaseServiceMixin {}
+
+abstract class Phased {}
+
+mixin IFactMixin {}
+mixin IFactInputMixin {}
+mixin IMemoryInputMixin {}
+mixin ISpecialEventInputMixin {}
+mixin ClipMixin {}
+mixin IMemoryMixin {}
+
+abstract class ITribeInput {}
+
+abstract class HasPhasesInputMixin {}
+
+abstract class HasMemoriesInputMixin {}
 
 abstract class IPhase {}
 
+abstract class IFact {}
+
 abstract class IMemory {}
 
-abstract class HasPhases implements Entity {}
+mixin FactMixin implements Entity {}
 
 abstract class HasPhasesApi {}
 
+mixin HasFactsApi {}
+mixin HasFacts {}
+
 abstract class HasPhasesMixin implements HasPhases {}
-
-abstract class HasPhasesCreateInput implements GraphInput {}
-
-abstract class HasPhasesUpdateInput implements GraphInput {}
 
 abstract class HasMemories implements Entity {}
 
@@ -57,7 +92,9 @@ abstract class HasMemoriesCreateInput implements GraphInput {}
 
 abstract class HasMemoriesUpdateInput implements GraphInput {}
 
-abstract class TribeData {}
+abstract class HasContacts {}
+
+abstract class HasTribes {}
 
 typedef GraphQLClientGetter = GraphQLClient Function();
 

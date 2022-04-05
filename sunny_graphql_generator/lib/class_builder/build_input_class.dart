@@ -11,15 +11,7 @@ void buildInputClass(
   required Iterable<FieldDefinition> sourceFields,
   required Iterable<DirectiveNode> directives,
 }) {
-  final inputMixin = directives.getString('mixin', 'input');
-  final interfaceMixin = directives.getString('interface', 'input');
   classDef
-    ..mixins.addAll([
-      if (inputMixin != null) refer(inputMixin),
-    ])
-    ..implements.addAll([
-      if (interfaceMixin != null) refer(interfaceMixin),
-    ])
     ..constructors.addAll([
       Constructor(
         (ctr) => ctr
@@ -123,7 +115,10 @@ void buildInputClass(
               for (var field in sourceFields)
                 if (!field.isRelationship) ...[
                   '    case "${field.name}": ',
-                  '      json["${field.name}"] = ${field.writeExpression('value')};',
+                  '      final _output = ${field.writeExpression('value')};',
+                  '      if (_output != null && _output != "") {',
+                  '        json["${field.name}"] = _output;',
+                  '      }',
                   '      break;',
                 ],
               "  }",

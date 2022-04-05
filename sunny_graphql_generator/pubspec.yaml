@@ -4,22 +4,24 @@ description: >
 version: 1.11.0
 
 environment:
-  sdk: '>=2.13.0 <3.0.0'
+  sdk: '>=2.14.0 <3.0.0'
 
 dependencies:
-  logging: ^1.0.1
+  logging: ^1.0.2
   gql: ^0.13.0
   flutter_degen: ^0.8.0+2
-  build_runner: ^2.1.2
-  source_gen: ^1.1.0
-  sunny_sdk_core: ^2.0.0+15
-  build: ^2.1.0
+  build_runner: ^2.1.4
+  source_gen: ^1.1.1
+
+  sunny_dart: ^0.11.0+7
+  sunny_sdk_core: ^2.4.0+11
+  build: ^2.1.1
   code_builder: ^4.1.0
-  dart_style: ^2.0.3
-  analyzer: ^2.2.0
-  dartxx: ^0.5.0+2
+  dart_style: ^2.2.0
+  analyzer: ^2.7.0
+  dartxx: ^0.5.3+2
   inflection3: ^0.5.3+2
-  flexidate: ^0.6.0+2
+  flexidate: ^0.8.0+3
   meta: ^1.7.0
   pedantic: ^1.11.1
   sunny_graphql:

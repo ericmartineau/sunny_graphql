@@ -10,6 +10,7 @@ class graphQL {
   final Map<String, String> typeMap;
   final Map<String, String> fieldNameMappers;
   final Map<String, String> typeNameMappers;
+  final List fragments;
   final String? moduleName;
 
   const graphQL({
@@ -20,6 +21,7 @@ class graphQL {
     this.typeMap = const {},
     this.fieldNameMappers = const {},
     this.typeNameMappers = const {},
+    this.fragments = const [],
     this.excludes,
     this.fragmentUri,
     this.declaration,

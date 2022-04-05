@@ -19,6 +19,38 @@ extension GraphScanSharedBuilder on GraphQLScanResult {
     final fragmentNames = <String>[];
     log.info('Writing Objects');
     declaredObjectTypes.forEach((def) {
+      // If there are union types, add them now
+      final unionInterfaces = this
+          .unionTypes
+          .values
+          .where((union) => union.types.any((t) {
+                return t.name.value == def.name.value;
+              }))
+          .map((e) => e.name.value)
+          .toSet();
+      code += classDefinition(
+        this,
+        '${def.name.value}Data'.toNameNode(),
+        isAbstract: true,
+        fromJson: true,
+        toJson: true,
+        toMap: true,
+        isInput: false,
+        isData: true,
+        directives: def.directives,
+        isJoinRecord: def.directives.hasDirective('joinRecord'),
+        interfaces: [
+          ...unionInterfaces,
+          ...def.interfaces.map(
+            (e) => e.toDartType(withNullability: false),
+          )
+        ],
+        fields: def.fields.map(
+          (d) => FieldDefinition.ofField(this, d, entityName: def.name.value),
+        ),
+        extraGenerator: extraGenerator,
+      );
+
       code += classDefinition(
         this,
         def.name,
@@ -26,11 +58,17 @@ extension GraphScanSharedBuilder on GraphQLScanResult {
         toJson: true,
         toMap: true,
         isInput: false,
+        isData: true,
         directives: def.directives,
-        isJoinRecord: def.directives.any((element) => element.name.value == 'joinRecord'),
-        interfaces: def.interfaces,
+        isJoinRecord: def.directives.hasDirective('joinRecord'),
+        interfaces: [
+          '${def.name.value}Data',
+          ...def.interfaces.map(
+            (e) => e.toDartType(withNullability: false),
+          )
+        ],
         fields: def.fields.map(
-          (d) => FieldDefinition.ofField(this, d),
+          (d) => FieldDefinition.ofField(this, d, entityName: def.name.value),
         ),
         extraGenerator: extraGenerator,
       );
@@ -39,7 +77,7 @@ extension GraphScanSharedBuilder on GraphQLScanResult {
       code += [
         'class ${def.name.value}Fields {',
         '  const ${def.name.value}Fields._();',
-        for (var field in def.fields.map((f) => FieldDefinition.ofField(this, f)))
+        for (var field in def.fields.map((f) => FieldDefinition.ofField(this, f, entityName: def.name.value)))
           '  static const ${field.name} = "${field.name}";',
         '  static const values = {',
         for (var field in def.fields) '      ${field.name.value},',
@@ -51,7 +89,7 @@ extension GraphScanSharedBuilder on GraphQLScanResult {
       code += [
         'class ${def.name.value}Paths {',
         '  const ${def.name.value}Paths._();',
-        for (var field in def.fields.map((f) => FieldDefinition.ofField(this, f)))
+        for (var field in def.fields.map((f) => FieldDefinition.ofField(this, f, entityName: def.name.value)))
           '  static const ${field.name} = JsonPath<${field.nullableDartTypeName}>.single("${field.name}");',
         '  static const values = [',
         for (var field in def.fields) '      ${field.name.value},',
@@ -59,22 +97,108 @@ extension GraphScanSharedBuilder on GraphQLScanResult {
         '}',
       ];
     });
-    log.info('Writing Interfaces');
-    this.declaredInterfaceTypes.forEach((def) {
+    log.info('Writing Unions');
+    unionTypes.values.forEach((union) {
+      final unionInterface = union.directives.getDirectiveValue('union', 'interface').stringValueOrNull;
+      late List<FieldDefinition> fields;
+      if (unionInterface != null) {
+        final unionInterfaceDef = interfaceTypes[unionInterface]!;
+        fields = unionInterfaceDef.fields.map((field) {
+          return FieldDefinition.ofField(this, field, entityName: union.name.value);
+        }).toList();
+      } else {
+        fields = [];
+      }
       code += classDefinition(
         this,
-        def.name,
-        toJson: false,
-        toMap: false,
+        union.name,
         fromJson: false,
+        toJson: true,
+        toMap: true,
         isInput: false,
-        isJoinRecord: false,
-        directives: def.directives,
-        fields: def.fields.map((d) => FieldDefinition.ofField(this, d)),
+        subTypes: union.types.map((t) => t.name.value),
+        directives: union.directives,
+        isJoinRecord: union.directives.hasDirective('joinRecord'),
+        interfaces: [],
+        fields: fields,
+        extraGenerator: extraGenerator,
+      );
+
+      //Input
+      code += classDefinition(
+        this,
+        '${union.name.value}CreateInput'.toNameNode(),
+        fromJson: false,
+        toJson: true,
+        toMap: false,
+        isInput: true,
         isAbstract: true,
+        subTypes: union.types.map((t) => t.name.value),
+        directives: union.directives,
+        isJoinRecord: union.directives.hasDirective('joinRecord'),
+        interfaces: [],
+        fields: [],
+        extraGenerator: extraGenerator,
+      );
+
+      //Input
+      code += classDefinition(
+        this,
+        '${union.name.value}UpdateInput'.toNameNode(),
+        fromJson: false,
+        toJson: true,
+        toMap: false,
+        isInput: true,
+        isAbstract: true,
+        subTypes: union.types.map((t) => t.name.value),
+        directives: union.directives,
+        isJoinRecord: union.directives.hasDirective('joinRecord'),
+        interfaces: [],
+        fields: [],
+        extraGenerator: extraGenerator,
       );
     });
 
+    log.info('Writing Interfaces');
+    this.declaredInterfaceTypes.forEach((def) {
+      if (!def.directives.hasDirective('unionInterface')) {
+        code += classDefinition(
+          this,
+          def.name,
+          toJson: false,
+          toMap: false,
+          fromJson: false,
+          isInput: false,
+          isJoinRecord: false,
+          directives: def.directives,
+          fields: def.fields.map((d) => FieldDefinition.ofField(this, d, entityName: def.name.value)),
+          isAbstract: true,
+        );
+      }
+    });
+
+    log.info('Writing typedefs');
+    this.typedefs.forEach((name, definition) {
+      code += 'typedef $name = $definition;';
+    });
+
+    log.info('Writing Input Ref Aliases');
+    final handled = <String>{};
+    this.declaredInputTypes.expand((element) => element.fields).forEach((field) {
+      var refAlias = field.directives.getDirectiveValue('ref', 'alias').stringValueOrNull;
+      final fieldType = field.type.toDartType(withNullability: false);
+      if (refAlias != null && !handled.contains(fieldType)) {
+        handled.add(fieldType);
+        code += "typedef $fieldType = ${refAlias};";
+      }
+
+      var refListAlias = field.directives.getDirectiveValue('reflist', 'alias').stringValueOrNull;
+      var targetType = field.directives.getDirectiveValue('reflist', 'target').stringValueOrNull;
+      if (refListAlias != null && targetType != null && !handled.contains(targetType)) {
+        handled.add(targetType);
+        code += "typedef $targetType = ${refListAlias};";
+      }
+    });
     log.info('Writing Inputs');
     this.declaredInputTypes.forEach((def) {
       code += classDefinition(
@@ -86,7 +210,7 @@ extension GraphScanSharedBuilder on GraphQLScanResult {
         isInput: true,
         directives: def.directives,
         isJoinRecord: false,
-        fields: def.fields.map((d) => FieldDefinition.ofInput(this, d)),
+        fields: def.fields.map((d) => FieldDefinition.ofInput(this, d, entityName: def.name.value)),
         extraGenerator: inputGenerator,
       );
     });
@@ -112,9 +236,11 @@ extension GraphScanSharedBuilder on GraphQLScanResult {
     this.fragments.values.forEach((def) {
       fragmentNames.add(def.name.value);
       code += [
-        'final ${def.name.value} = gql(""" fragment ${def.name.value} on ${def.name.value.replaceAll("Fragment", "")} {',
+        'final ${def.name.value} = gql("""',
+        'fragment ${def.name.value} on ${def.typeCondition.on.toGQLType(withNullability: false)} {',
         def.selectionSet.serialize(1),
-        '}""");',
+        '}',
+        '""").definitions.whereType<FragmentDefinitionNode>().first;',
         '',
       ];
     });
@@ -124,10 +250,7 @@ extension GraphScanSharedBuilder on GraphQLScanResult {
 extension FieldDefinitionCodeExt on FieldDefinition {
   Expression readExpression([String from = 'json']) {
     final fieldDef = this.original is FieldDefinitionNode ? this.original as FieldDefinitionNode : null;
-    final isJoinRecord = fieldDef?.directives
-            .where((element) => element.name.value == 'relationship')
-            .any((element) => element.arguments.any((element) => element.name.value == 'properties')) ==
-        true;
+    final isJoinRecord = fieldDef?.directives.getDirectiveValue("relationship", "properties").stringValueOrNull != null;
 
     var selectName = this.name;
     if (isJoinRecord) {
@@ -154,7 +277,7 @@ extension FieldDefinitionCodeExt on FieldDefinition {
       case 'string':
       case 'boolean':
       case 'id':
-        return jsonExpr.asA(refer(this.typeNode.toDartType()));
+        return jsonExpr.asA(refer(this.nullableDartTypeName));
       default:
         return refer('GraphClientConfig.read${isList ? 'List' : ''}').call([
           jsonExpr
