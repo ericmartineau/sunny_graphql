@@ -51,6 +51,8 @@ class Neo4JGraphQLClient {
               variables: {
                 "id": entityId,
               },
+              cacheRereadPolicy: CacheRereadPolicy.ignoreAll,
+              fetchPolicy: FetchPolicy.noCache,
             ),
           );
 
@@ -149,9 +151,17 @@ class Neo4JGraphQLClient {
       throw GraphClientConfig.translateException(operation, variables, result.exception!);
     }
 
-    var rawData = result.data!["update${entityName.plural}"]["${entityName.artifactPlural}"][0];
-    assert(rawData is Map, "Result of create$entityName must be a Map");
-    return (rawData as Map).cast();
+    try {
+      var rawData = result.data!["update${entityName.plural}"]["${entityName.artifactPlural}"][0];
+      assert(rawData is Map, "Result of create$entityName must be a Map");
+      return (rawData as Map).cast();
+    } catch (e) {
+      print("Error: $e");
+      print(e);
+      rethrow;
+    }
+
+
   }
 
   Future<List<T>> loadRelatedList<T>(

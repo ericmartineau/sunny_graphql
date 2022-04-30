@@ -33,6 +33,7 @@ class SunnyGraphQLModel implements GraphQLScanResult {
   final typedefs = <String, String>{};
   final fragments = <String, FragmentDefinitionNode>{};
   final fragmentDepends = FragmentDependencies();
+  final nestedFragments = <String, String>{};
   final subqueries = <String, Map<String, GraphSubQuery>>{};
   final joinRecords = <String>{};
   final NameMapper mapTypeName;
@@ -48,7 +49,8 @@ class SunnyGraphQLModel implements GraphQLScanResult {
   final Map<RegExp, String> fieldNameMap;
   Logger get log => _log;
 
-  static Future<SunnyGraphQLModel> initFromAnnotation(Element element, ConstantReader annotation) async {
+  static Future<SunnyGraphQLModel> initFromAnnotation(
+      Element element, ConstantReader annotation) async {
     assert(element is ClassElement, "@graphQL must only be applied to class");
     final cls = element as ClassElement;
     assert(cls.isAbstract, "@graphQL must be applied to abstract classes");
@@ -56,15 +58,23 @@ class SunnyGraphQLModel implements GraphQLScanResult {
     var excludesValue = annotation.read('excludes');
     var mixinMapValue = annotation.read('mixins');
     var typeMap = annotation.read('typeMap').isMap
-        ? annotation.read('typeMap').mapValue.map((key, value) => MapEntry(key!.toStringValue()!, value!.toStringValue()!))
+        ? annotation.read('typeMap').mapValue.map((key, value) =>
+            MapEntry(key!.toStringValue()!, value!.toStringValue()!))
         : <String, String>{};
 
     var mixinMap = mixinMapValue.isMap
-        ? mixinMapValue.mapValue.map((key, value) => MapEntry(key!.toStringValue()!, value!.toStringValue()!))
+        ? mixinMapValue.mapValue.map((key, value) =>
+            MapEntry(key!.toStringValue()!, value!.toStringValue()!))
         : <String, String>{};
 
-    var includesSet = includesValue.isList ? includesValue.listValue.map((d) => d.toStringValue()).toSet() : <String>{};
-    var excludeSet = excludesValue.isList ? excludesValue.listValue.map((d) => RegExp(d.toStringValue()!)).toList() : <RegExp>[];
+    var includesSet = includesValue.isList
+        ? includesValue.listValue.map((d) => d.toStringValue()).toSet()
+        : <String>{};
+    var excludeSet = excludesValue.isList
+        ? excludesValue.listValue
+            .map((d) => RegExp(d.toStringValue()!))
+            .toList()
+        : <RegExp>[];
     final concreteName = cls.name.substring(1);
 
     final sourceUris = [annotation.read('uri'), annotation.read('fragmentUri')]
@@ -73,7 +83,9 @@ class SunnyGraphQLModel implements GraphQLScanResult {
         .toList();
     var doc = (await Future.wait(sourceUris.map((uri) async {
           try {
-            final read = uri.startsWith("http") ? (await Client().get(Uri.parse(uri))).body : File(uri).readAsStringSync();
+            final read = uri.startsWith("http")
+                ? (await Client().get(Uri.parse(uri))).body
+                : File(uri).readAsStringSync();
             final doc = lang.parseString(read);
             return doc;
           } catch (e) {
@@ -92,30 +104,35 @@ class SunnyGraphQLModel implements GraphQLScanResult {
     var typeNameMappers = <RegExp, String>{};
     var fieldNameMappers = <RegExp, String>{};
     if (!annotation.read('typeNameMappers').isNull) {
-      typeNameMappers = annotation
-          .read('typeNameMappers')
-          .mapValue
-          .map((key, value) => MapEntry(RegExp(key!.toStringValue()!), value!.toStringValue()!));
+      typeNameMappers = annotation.read('typeNameMappers').mapValue.map(
+          (key, value) =>
+              MapEntry(RegExp(key!.toStringValue()!), value!.toStringValue()!));
     }
     if (!annotation.read('fieldNameMappers').isNull) {
-      fieldNameMappers = annotation
-          .read('fieldNameMappers')
-          .mapValue
-          .map((key, value) => MapEntry(RegExp(key!.toStringValue()!), value!.toStringValue()!));
+      fieldNameMappers = annotation.read('fieldNameMappers').mapValue.map(
+          (key, value) =>
+              MapEntry(RegExp(key!.toStringValue()!), value!.toStringValue()!));
     }
 
     final result = SunnyGraphQLModel(
       className: concreteName,
       mixinMap: mixinMap,
       typeMap: typeMap,
-      includes: includesSet.whereType<String>().map((pattern) => RegExp(pattern)).toList(),
-      excludes: excludeSet.whereType<String>().map((pattern) => RegExp(pattern)).toList(),
+      includes: includesSet
+          .whereType<String>()
+          .map((pattern) => RegExp(pattern))
+          .toList(),
+      excludes: excludeSet
+          .whereType<String>()
+          .map((pattern) => RegExp(pattern))
+          .toList(),
       doc: doc,
       fieldNameMap: fieldNameMappers,
       typeNameMap: typeNameMappers,
     );
 
-    doc.definitions.forEach((def) => result.addDefinition(def, forceInclude: false));
+    doc.definitions
+        .forEach((def) => result.addDefinition(def, forceInclude: false));
     return result;
   }
 
@@ -159,7 +176,8 @@ class SunnyGraphQLModel implements GraphQLScanResult {
     });
   }
 
-  void addType(TypeNode node, {bool forceInclude = true, required String? parentType}) {
+  void addType(TypeNode node,
+      {bool forceInclude = true, required String? parentType}) {
     if (node is ListTypeNode) {
       addType(node.type, forceInclude: forceInclude, parentType: parentType);
     } else if (node is NamedTypeNode) {
@@ -186,7 +204,8 @@ class SunnyGraphQLModel implements GraphQLScanResult {
       void inspectNode(SelectionSetNode? set) {
         set?.selections.forEach((sel) {
           if (sel is FragmentSpreadNode) {
-            addFragment(doc.findFragment(sel.name.value), [...from, fragmentName]);
+            addFragment(
+                doc.findFragment(sel.name.value), [...from, fragmentName]);
           } else if (sel is FieldNode) {
             inspectNode(sel.selectionSet);
           }
@@ -226,13 +245,15 @@ class SunnyGraphQLModel implements GraphQLScanResult {
   void addQuery(FieldDefinitionNode def) {
     query[def.name.value] = def;
     addType(def.type, parentType: null);
-    def.args.forEach((element) => addType(element.type, parentType: def.type.toRawType()));
+    def.args.forEach(
+        (element) => addType(element.type, parentType: def.type.toRawType()));
   }
 
   void addMutation(FieldDefinitionNode def) {
     mutation[def.name.value] = def;
     addType(def.type, parentType: null);
-    def.args.forEach((element) => addType(element.type, parentType: def.type.toRawType()));
+    def.args.forEach(
+        (element) => addType(element.type, parentType: def.type.toRawType()));
   }
 
   void addDefinition(Node? type, {bool forceInclude = true}) {
@@ -247,27 +268,35 @@ class SunnyGraphQLModel implements GraphQLScanResult {
     }
 
     if (type is InputObjectTypeDefinitionNode) {
-      if (checkDone(type.name.value) && (forceInclude || isIncluded(type.name.value))) addInputType(type);
+      if (checkDone(type.name.value) &&
+          (forceInclude || isIncluded(type.name.value))) addInputType(type);
     } else if (type is ObjectTypeDefinitionNode) {
       if (type.name.value == 'Query') {
         type.fields
-            .where((query) => checkDone(query.name.value) && isIncluded(query.name.value))
+            .where((query) =>
+                checkDone(query.name.value) && isIncluded(query.name.value))
             .forEach((element) => addQuery(element));
       } else if (type.name.value == 'Mutation') {
         type.fields
-            .where((query) => checkDone(query.name.value) && isIncluded(query.name.value))
+            .where((query) =>
+                checkDone(query.name.value) && isIncluded(query.name.value))
             .forEach((element) => addMutation(element));
       } else {
-        if (checkDone(type.name.value) && (forceInclude || isIncluded(type.name.value))) {
+        if (checkDone(type.name.value) &&
+            (forceInclude || isIncluded(type.name.value))) {
           addObjectType(type);
         }
       }
     } else if (type is EnumTypeDefinitionNode) {
-      if (checkDone(type.name.value) && (forceInclude || isIncluded(type.name.value))) enumTypes[type.name.value] = type;
+      if (checkDone(type.name.value) &&
+          (forceInclude || isIncluded(type.name.value)))
+        enumTypes[type.name.value] = type;
     } else if (type is InterfaceTypeDefinitionNode) {
-      if (checkDone(type.name.value) && (forceInclude || isIncluded(type.name.value))) addInterface(type);
+      if (checkDone(type.name.value) &&
+          (forceInclude || isIncluded(type.name.value))) addInterface(type);
     } else if (type is FragmentDefinitionNode) {
-      if (checkDone(type.name.value) && (forceInclude || isIncluded(type.name.value))) addFragment(type);
+      if (checkDone(type.name.value) &&
+          (forceInclude || isIncluded(type.name.value))) addFragment(type);
     } else if (type is ScalarTypeDefinitionNode) {
       checkDone(type.name.value);
     } else if (type is UnionTypeDefinitionNode) {
@@ -276,20 +305,26 @@ class SunnyGraphQLModel implements GraphQLScanResult {
       type.types.forEach((unionType) {
         extraInterfaces.putIfAbsent(unionType.name.value, () => {}).add(
               NamedTypeNode(
-                name: NameNode(value: (type as UnionTypeDefinitionNode).name.value),
+                name: NameNode(
+                    value: (type as UnionTypeDefinitionNode).name.value),
               ),
             );
         var fragmentName = '${type.name.value}Fragment';
         UnionTypeDefinitionNode utype = type;
         if (utype.directives.hasDirective("selection")) {
-          final prefix = utype.directives.getDirectiveValue("selection", "prefix").stringValue;
-          final fields = utype.directives.getDirectiveValue("selection", "fields").getList<String>();
+          final prefix = utype.directives
+              .getDirectiveValue("selection", "prefix")
+              .stringValue;
+          final fields = utype.directives
+              .getDirectiveValue("selection", "fields")
+              .getList<String>();
           var fragmentName = '${type.name.value}${prefix}Fragment';
           fragments.putIfAbsent(
             fragmentName,
             () => FragmentDefinitionNode(
               name: fragmentName.toNameNode(),
-              typeCondition: TypeConditionNode(on: utype.name.value.toNamedType()),
+              typeCondition:
+                  TypeConditionNode(on: utype.name.value.toNamedType()),
               selectionSet: SelectionSetNode(selections: [
                 for (final u in utype.types)
                   InlineFragmentNode(
@@ -303,24 +338,29 @@ class SunnyGraphQLModel implements GraphQLScanResult {
               ]),
             ),
           );
+          nestedFragments[utype.name.value] =
+              '${type.name.value}${prefix}Fragment';
           // fragmentDepends.addAll(fragmentName, utype.types.map((t) => "${t.name.value}Fragment").toSet());
         }
         fragments.putIfAbsent(
           fragmentName,
           () => FragmentDefinitionNode(
             name: fragmentName.toNameNode(),
-            typeCondition: TypeConditionNode(on: utype.name.value.toNamedType()),
+            typeCondition:
+                TypeConditionNode(on: utype.name.value.toNamedType()),
             selectionSet: SelectionSetNode(selections: [
               for (final u in utype.types)
                 InlineFragmentNode(
                     typeCondition: TypeConditionNode(on: u),
                     selectionSet: SelectionSetNode(selections: [
-                      FragmentSpreadNode(name: '${u.name.value}Fragment'.toNameNode()),
+                      FragmentSpreadNode(
+                          name: '${u.name.value}Fragment'.toNameNode()),
                     ]))
             ]),
           ),
         );
-        fragmentDepends.addAll(fragmentName, utype.types.map((t) => "${t.name.value}Fragment").toSet());
+        fragmentDepends.addAll(fragmentName,
+            utype.types.map((t) => "${t.name.value}Fragment").toSet());
       });
     } else if (type is DirectiveDefinitionNode) {
       // We ignore these on purpose

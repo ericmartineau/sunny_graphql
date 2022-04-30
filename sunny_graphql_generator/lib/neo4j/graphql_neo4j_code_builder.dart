@@ -2,12 +2,11 @@ import 'package:code_builder/code_builder.dart';
 import 'package:dartxx/dartxx.dart';
 import 'package:logging/logging.dart';
 import 'package:sunny_graphql_generator/code_builder.dart';
-import 'package:sunny_graphql_generator/neo4j/graphql_neo4j_scanner.dart';
 import 'package:sunny_graphql_generator/graphql_scanner_code_builder.dart';
+import 'package:sunny_graphql_generator/neo4j/graphql_neo4j_scanner.dart';
 
-import '../graphql_entity.dart';
-import '../shared_code_builders.dart';
 import '../shared.dart';
+import '../shared_code_builders.dart';
 
 final _log = Logger('graphql_generator');
 final IdParameter = Parameter(
@@ -18,21 +17,42 @@ final IdParameter = Parameter(
 const notImplemented = Code('throw "Not implemented";');
 
 CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
-  _log.info('Writing Subqueries');
   var code = CodeBuilder();
   model.model.addAllModels(
     code,
     inputGenerator: (c, name, fields, isAbstract) {
+      final typeName =
+          name.replaceAll("CreateInput", "").replaceAll("UpdateInput", "");
       c.extend = refer('BaseGraphInput');
+      c.methods.add(Method((f) => f
+        ..overridden()
+        ..returns = refer('${typeName}Meta')
+        ..name = 'meta'
+        ..type = MethodType.getter
+        ..body = Code('return ${typeName}Meta.instance;')));
     },
     extraGenerator: (c, name, fields, isAbstract) {
       c.extend = refer('BaseSunnyEntity');
-      c.fields.add(Field((f) => f
+      c.methods.add(Method((f) => f
+        ..name = 'metadata'
+        ..static = true
+        ..type = MethodType.getter
+        ..returns = refer('${name}Meta')
+        ..body = refer('${name}Meta').property('instance').code));
+      c.methods.add(Method((f) => f
         ..name = 'ref'
         ..static = true
-        ..modifier = FieldModifier.constant
-        ..assignment =
-            Code('MSchemaRef("mverse", "${model.moduleName.uncapitalize()}", "${name.uncapitalize()}", "1.0.0", "mvext")')));
+        ..type = MethodType.getter
+        ..returns = refer('MSchemaRef')
+        ..body =
+            refer('${name}Meta').property('instance').property('mtype').code));
+
+      c.methods.add(Method((f) => f
+        ..overridden()
+        ..returns = refer('${name}Meta')
+        ..name = 'meta'
+        ..type = MethodType.getter
+        ..body = Code('return ${name}Meta.instance;')));
     },
   );
 
@@ -41,10 +61,7 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
 
     code += Class((c) => c
       ..name = '${objName.capitalize()}Api'
-      ..extend =
-          refer("GraphApi<${objName.capitalize()}, ${objName.capitalize()}CreateInput, ${objName.capitalize()}UpdateInput>")
-      ..mixins.addAll(entity.serviceMixins.map(refer))
-      ..implements.addAll(entity.serviceInterfaces.map(refer))
+      ..extend = refer('${objName.capitalize()}ApiBase')
       ..constructors.add(Constructor((c) => c
         ..requiredParameters.addAll([
           Parameter((p) => p
@@ -81,16 +98,13 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
           ..modifier = FieldModifier.final$),
       ])
       ..methods.addAll([
-        Method((m) => m
+        Method((f) => f
+          ..overridden()
+          ..name = 'meta'
           ..type = MethodType.getter
-          ..name = 'mtype'
-          ..returns = refer('MSchemaRef')
-          ..body = Code('return ${objName.capitalize()}.ref;')),
-        Method((m) => m
-          ..type = MethodType.getter
-          ..name = 'mfields'
-          ..returns = refer('Set<String>')
-          ..body = Code('return ${objName.capitalize()}Fields.values;')),
+          ..returns = refer('${objName.capitalize()}Meta')
+          ..body =
+              refer('${objName.capitalize()}Meta').property('instance').code),
         Method((m) => m
           ..annotations.add(refer('override'))
           ..name = 'client'
@@ -119,7 +133,10 @@ CodeBuilder buildNeo4jCode(GraphQLNeo4Model model) {
             Method(
               (m) => m
                 ..name = 'load${sub.name.capitalize()}ForRecord'
-                ..returns = refer(sub.isList ? 'List<${sub.joinRecordType}>' : sub.nullableDartTypeName).future()
+                ..returns = refer(sub.isList
+                        ? 'List<${sub.joinRecordType}>'
+                        : sub.nullableDartTypeName)
+                    .future()
                 ..requiredParameters.add(IdParameter)
                 ..body = Code(
                     'return this.loadRelated${sub.isList ? 'List' : ''}(id: id, relatedType: "${sub.joinRecordType}", isNullable: ${!sub.isNonNull}, field: "${sub.name}Connection", isJoinType: true,);'),

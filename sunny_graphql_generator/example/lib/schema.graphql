@@ -26,15 +26,6 @@ fragment ClipVersionFragment on ClipVersion {
   dateModified
 }
 
-fragment FactFragment on Fact {
-  ... on Memory {
-    ...MemoryFragment
-  }
-  ... on SpecialEvent {
-    ...SpecialEventFragment
-  }
-}
-
 directive @constraint(minLength: Int, maxLength: Int, startsWith: String, endsWith: String, notContains: String, pattern: String, format: String, min: Int, max: Int, exclusiveMin: Int, exclusiveMax: Int, multipleOf: Int) on INPUT_FIELD_DEFINITION | FIELD_DEFINITION
 
 """ Indicates that this property should be fetched by default"""
@@ -57,7 +48,7 @@ directive @mixin(names: [String!], name: String, apis: [String!], api: String, i
 directive @named(name: String!, extends: String, mixin: String, mixins: [String!]) on FIELD_DEFINITION | OBJECT
 
 """ Indicates this entity should use an alternate form"""
-directive @partial(name: String!) on ARGUMENT_DEFINITION
+directive @partial(prefix: String!) on ARGUMENT_DEFINITION | FIELD_DEFINITION
 
 directive @selection(prefix: String, fields: [String!]!) on UNION
 
@@ -77,7 +68,8 @@ enum MediaType {
 
 enum MetricType {
   STANDARD
-  SIMPLE
+  BOOLEAN
+  PROGRESSION
 }
 
 enum Orientation {
@@ -103,11 +95,17 @@ enum TeamStatus {
   ENDED
 }
 
+scalar EvaluationScore
+
 scalar FlexiDate
 
 scalar FormatValue
 
+scalar MetricLabels
+
 scalar PlayerPosition
+
+scalar TimeSpan
 
 scalar URI
 
@@ -115,9 +113,23 @@ scalar ValidateNumber
 
 scalar ValidateString
 
+interface DependentNodeInfo @relationshipProperties {
+  minScore: Float
+  weight: Float
+  optional: Boolean
+  sortOrder: Int
+}
+
 interface Dimensioned {
   height: Float
   width: Float
+}
+
+interface EvaluationInfo {
+  id: ID!
+  system: PlayerRankSystem
+  dateCreated: DateTime!
+  dateModified: DateTime!
 }
 
 interface FactParticipant @relationshipProperties {
@@ -153,6 +165,10 @@ interface IMedia @unionInterface(union: "Media") {
   orientation: Orientation
 }
 
+interface IPlayerNode {
+  id: ID!
+}
+
 interface IRef {
   id: ID!
   displayName: String!
@@ -175,14 +191,31 @@ interface MediaSelection @relationshipProperties {
   sortOrder: Int
 }
 
-interface PlayerRankOrgCoach @relationshipProperties {
+interface PlayerRankCoachInfo {
   role: String
-  notes: String
 }
 
-interface PlayerRankOrgPlayer @relationshipProperties {
-  role: String
+interface PlayerRankEvaluationData @relationshipProperties {
+  score: EvaluationScore!
+  timestamp: DateTime
+  virtual: Boolean
+}
+
+interface PlayerRankMember {
+  inactiveDate: DateTime
+  joinDate: DateTime
   notes: String
+  id: ID!
+  contact: Contact!
+  organization: PlayerRankOrganization!
+}
+
+interface PlayerRankOrgInfo {
+  id: ID!
+  tribe: Tribe!
+}
+
+interface PlayerRankPlayerInfo {
   positions: [PlayerPosition!]
 }
 
@@ -249,10 +282,8 @@ type Contact implements IRef @entity @mixin(api: "ContactApiMixin") @interfaces(
   parentFamily: FamilyTribe @lazy @relationship(type: "PARENT", direction: IN)
   friendGroups: [FriendGroupTribe!]! @lazy @relationship(direction: OUT, type: "FRIEND")
   reactions: [Reaction!]! @lazy @relationship(type: "REACTION_SUBJECT", direction: IN)
-  hoopsCoachesFor: [PlayerRankOrganization!]! @lazy @relationship(type: "PLAYER_RANK_COACH_ORG", direction: IN, properties: "PlayerRankOrgCoach")
-  hoopsPlaysFor: [PlayerRankOrganization!]! @lazy @relationship(type: "PLAYER_RANK_PLAYER_ORG", direction: IN, properties: "PlayerRankOrgPlayer")
-  teamsPlayedFor: [PlayerRankTeam!]! @lazy @relationship(type: "PLAYER_RANK_PLAYER_TEAM", direction: IN, properties: "PlayerRankTeamPlayerInfo")
-  teamsCoachedFor: [PlayerRankTeam!]! @lazy @relationship(type: "PLAYER_RANK_COACH_TEAM", direction: IN, properties: "PlayerRankTeamCoachInfo")
+  playerRankPlayedFor: [PlayerRankOrganizationPlayer!]! @lazy @relationship(type: "PLAYER_RANK_PLAYER_CONTACT", direction: IN)
+  playerRankCoachesFor: [PlayerRankOrganizationCoach!]! @lazy @relationship(type: "PLAYER_RANK_COACH_CONTACT", direction: IN)
 }
 
 fragment ContactFragment on Contact {
@@ -263,6 +294,15 @@ fragment ContactFragment on Contact {
   birthday
   dateCreated
   dateModified
+}
+
+fragment FactFragment on Fact {
+  ... on Memory {
+    ...MemoryFragment
+  }
+  ... on SpecialEvent {
+    ...SpecialEventFragment
+  }
 }
 
 type FamilyTribe implements ITribeMixin @entity @interfaces(input: "ITribeInput") {
@@ -380,6 +420,64 @@ type Mutation {
   version: String
 }
 
+fragment PartialPlayerRankOrganizationCoachFragment on PlayerRankOrganizationCoach {
+  id
+  contact {
+    ...ContactFragment
+  }
+  organization {
+    ...PartialPlayerRankOrganizationFragment
+  }
+  inactiveDate
+  joinDate
+  notes
+  role
+}
+
+fragment PartialPlayerRankOrganizationFragment on PlayerRankOrganization {
+  id
+  tribe {
+    ...TribeFragment
+  }
+}
+
+fragment PartialPlayerRankOrganizationPlayerFragment on PlayerRankOrganizationPlayer {
+  id
+  contact {
+    ...ContactFragment
+  }
+  organization {
+    ...PartialPlayerRankOrganizationFragment
+  }
+  overallRating
+  inactiveDate
+  joinDate
+  notes
+  positions
+}
+
+fragment PartialPlayerRankPlayerEvaluationFragment on PlayerRankPlayerEvaluation {
+  id
+  player {
+    ...PartialPlayerRankOrganizationPlayerFragment
+  }
+  points {
+    ...PlayerRankEvaluationPointFragment
+  }
+  system {
+    ...PartialPlayerRankSystemFragment
+  }
+  dateCreated
+  dateModified
+}
+
+fragment PartialPlayerRankSystemFragment on PlayerRankSystem {
+  id
+  displayName
+  description
+  photoUrl
+}
+
 type Phase implements IRef @entity @interfaces(name: "IPhase") {
   id: ID! @id
   displayName: String!
@@ -429,6 +527,70 @@ fragment PhysicalLocationFragment on PhysicalLocation {
   lon
 }
 
+type PlayerRankDrill implements IRef @entity {
+  id: ID! @id
+  displayName: String!
+  photoUrl: URI
+  notes: String
+  player: PlayerRankOrganizationPlayer @eager @relationship(type: "PLAYER_RANK_PLAYER_DRILL", direction: OUT)
+  organization: PlayerRankOrganization @eager @relationship(type: "PLAYER_RANK_ORG_DRILL", direction: OUT)
+}
+
+fragment PlayerRankDrillFragment on PlayerRankDrill {
+  id
+  displayName
+  photoUrl
+  notes
+}
+
+type PlayerRankEvalNode implements IRef & IPlayerNode @entity {
+  id: ID! @id(autogenerate: false)
+  displayName: String!
+  description: String
+  photoUrl: URI
+  evaluationSystem: PlayerRankSystem @lazy @relationship(type: "PLAYER_RANK_SYSTEM_NODE", direction: IN)
+  metricType: MetricType
+  metricLabels: MetricLabels
+  rangeLow: Int
+  rangeHigh: Int
+  defaultValue: EvaluationScore
+}
+
+fragment PlayerRankEvalNodeFragment on PlayerRankEvalNode {
+  id
+  displayName
+  photoUrl
+  description
+  evaluationSystem {
+    ...PartialPlayerRankSystemFragment
+  }
+  metricType
+  metricLabels
+  rangeLow
+  rangeHigh
+  defaultValue
+}
+
+type PlayerRankEvaluationPoint @entity {
+  id: ID! @id
+  nodeId: ID!
+  evaluation: PlayerRankPlayerEvaluation @lazy @relationship(type: "PLAYER_RANK_EVAL_HISTORY_ITEM", direction: IN)
+  activeEvaluation: PlayerRankPlayerEvaluation @lazy @relationship(type: "PLAYER_RANK_EVAL_ITEM", direction: IN)
+  previousScore: EvaluationScore
+  score: EvaluationScore!
+  timestamp: DateTime! @timestamp(operations: [CREATE])
+  virtual: Boolean
+}
+
+fragment PlayerRankEvaluationPointFragment on PlayerRankEvaluationPoint {
+  id
+  nodeId
+  previousScore
+  score
+  timestamp
+  virtual
+}
+
 fragment PlayerRankLevelFragment on PlayerRankTeamLevel {
   id
   displayName
@@ -436,41 +598,92 @@ fragment PlayerRankLevelFragment on PlayerRankTeamLevel {
   sortOrder
 }
 
-type PlayerRankOrganization implements ITribeMixin @entity @interfaces(input: "ITribeInput") {
-  id: ID! @id
-  tribe: Tribe! @eager @relationship(direction: OUT, type: "PLAYER_RANK_TRIBE")
-  coaches: [Contact!]! @eager @relationship(type: "PLAYER_RANK_COACH_ORG", direction: OUT, properties: "PlayerRankOrgCoach")
-  players: [Contact!]! @eager @relationship(type: "PLAYER_RANK_CHILD_ORG", direction: OUT, properties: "PlayerRankOrgPlayer")
-  levels: [PlayerRankTeamLevel!]! @relationship(type: "PLAYER_RANK_LEVEL", direction: OUT)
-  teams: [PlayerRankTeam!]! @relationship(type: "PLAYER_RANK_TEAM", direction: OUT)
+type PlayerRankLogicalNode implements IRef & IPlayerNode @entity {
+  id: ID! @id(autogenerate: false)
+  displayName: String!
+  description: String
+  photoUrl: URI
+  completable: Boolean
+  evaluationSystem: PlayerRankSystem @lazy @relationship(type: "PLAYER_RANK_SYSTEM_NODE", direction: IN)
+  dependentNodes: [PlayerRankNode!]! @lazy @relationship(type: "PLAYER_RANK_DEPENDENT_NODES", direction: OUT, properties: "DependentNodeInfo")
+  optionalNodeCount: Int
 }
 
-fragment PlayerRankOrganizationFragment on PlayerRankOrganization {
+fragment PlayerRankLogicalNodeFragment on PlayerRankLogicalNode {
   id
-  levels {
-    ...PlayerRankLevelFragment
+  displayName
+  photoUrl
+  description
+  evaluationSystem {
+    ...PartialPlayerRankSystemFragment
   }
-  teams {
-    ...PlayerRankTeamFragment
-  }
+}
+
+type PlayerRankOrganization implements ITribeMixin & PlayerRankOrgInfo @entity @interfaces(input: "ITribeInput") {
+  id: ID! @id
+  tribe: Tribe! @eager @relationship(direction: OUT, type: "PLAYER_RANK_TRIBE")
+  system: PlayerRankSystem @eager @relationship(type: "PLAYER_RANK_ORG_SYSTEM", direction: OUT)
+  coaches: [PlayerRankOrganizationCoach!]! @lazy @relationship(type: "PLAYER_RANK_ORG_COACH", direction: OUT)
+  players: [PlayerRankOrganizationPlayer!]! @lazy @relationship(type: "PLAYER_RANK_ORG_PLAYER", direction: OUT)
+  levels: [PlayerRankTeamLevel!]! @relationship(type: "PLAYER_RANK_LEVEL", direction: OUT)
+  teams: [PlayerRankTeam!]! @relationship(type: "PLAYER_RANK_TEAM", direction: OUT)
+  drills: [PlayerRankDrill!]! @lazy @relationship(type: "PLAYER_RANK_ORG_DRILL", direction: IN)
+}
+
+type PlayerRankOrganizationCoach implements PlayerRankMember & PlayerRankCoachInfo @entity @mixin(name: "HasContact") {
+  id: ID! @id
+  contact: Contact! @flatten @eager @relationship(type: "PLAYER_RANK_COACH_CONTACT", direction: OUT)
+  organization: PlayerRankOrganization! @lazy @relationship(type: "PLAYER_RANK_ORG_COACH", direction: IN)
+  inactiveDate: DateTime
+  joinDate: DateTime
+  role: String
+  notes: String
+}
+
+type PlayerRankOrganizationPlayer implements PlayerRankMember & PlayerRankPlayerInfo @entity @mixin(name: "HasContact") {
+  id: ID! @id
+  contact: Contact! @flatten @eager @relationship(type: "PLAYER_RANK_PLAYER_CONTACT", direction: OUT)
+  organization: PlayerRankOrganization! @eager(prefix: "Partial") @relationship(type: "PLAYER_RANK_ORG_PLAYER", direction: IN)
+  evaluation: PlayerRankPlayerEvaluation @eager(prefix: "Partial") @relationship(type: "PLAYER_RANK_PLAYER_EVAL_PLAYER", direction: IN)
+  inactiveDate: DateTime
+  joinDate: DateTime
+  overallRating: EvaluationScore
+  notes: String
+  positions: [PlayerPosition!]
+  workouts: [PlayerRankWorkout!]! @lazy @relationship(type: "PLAYER_RANK_PLAYER_WORKOUT", direction: IN)
+  areasOfFocus: [PlayerRankPlayerFocusArea!]! @lazy @relationship(type: "PLAYER_RANK_PLAYER_FOCUS", direction: IN)
+  drills: [PlayerRankDrill!]! @lazy @relationship(type: "PLAYER_RANK_PLAYER_DRILL", direction: IN)
+}
+
+type PlayerRankPlayerEvaluation implements EvaluationInfo @entity {
+  id: ID! @id
+  player: PlayerRankOrganizationPlayer @lazy @relationship(type: "PLAYER_RANK_PLAYER_EVAL_PLAYER", direction: OUT)
+  system: PlayerRankSystem @lazy @relationship(type: "PLAYER_RANK_PLAYER_EVAL_SYSTEM", direction: OUT)
+  points: [PlayerRankEvaluationPoint!]! @eager @relationship(type: "PLAYER_RANK_EVAL_ITEM", direction: OUT)
+  history: [PlayerRankEvaluationPoint!]! @lazy @relationship(type: "PLAYER_RANK_EVAL_HISTORY_ITEM", direction: OUT)
+  dateCreated: DateTime! @timestamp(operations: [CREATE]) @readonly
+  dateModified: DateTime! @timestamp(operations: [CREATE, UPDATE]) @readonly
+}
+
+type PlayerRankPlayerFocusArea @entity {
+  id: ID! @id
+  player: PlayerRankOrganizationPlayer @lazy @relationship(type: "PLAYER_RANK_PLAYER_FOCUS", direction: OUT)
+  active: Boolean
+  startDate: DateTime!
+  displayName: String!
+  notes: String
+  sortOrder: Int
 }
 
 type PlayerRankSystem implements IRef @entity {
-  id: ID! @id
+  id: ID! @id(autogenerate: false)
   displayName: String!
   description: String!
   photoUrl: URI
-  nodes: [PlayerRankSystemNode!]! @relationship(type: "PLAYER_RANK_SYSTEM_NODE", direction: OUT)
-}
-
-type PlayerRankSystemNode @entity {
-  id: ID! @id
-  displayName: String!
-  description: String!
-  metricType: MetricType
-  evaluationSystem: PlayerRankSystem! @lazy @relationship(type: "PLAYER_RANK_SYSTEM_NODE", direction: IN)
-  parent: PlayerRankSystemNode @relationship(type: "PLAYER_RANK_NODE_CHILDREN", direction: IN)
-  children: [PlayerRankSystemNode!]! @relationship(type: "PLAYER_RANK_NODE_CHILDREN", direction: OUT)
+  allNodes: [PlayerRankNode!]! @lazy @relationship(type: "PLAYER_RANK_SYSTEM_NODE", direction: OUT)
+  evalNodes: [PlayerRankNode!]! @lazy @relationship(type: "PLAYER_RANK_EVAL_NODE", direction: OUT)
+  primaryRating: PlayerRankLogicalNode @lazy @relationship(type: "PLAYER_RANK_RATING_NODE", direction: OUT)
+  badges: [PlayerRankLogicalNode!]! @lazy @relationship(type: "PLAYER_RANK_BADGE_NODE", direction: OUT)
 }
 
 type PlayerRankTeam implements IRef @entity {
@@ -486,18 +699,6 @@ type PlayerRankTeam implements IRef @entity {
   roster: [Contact!]! @lazy @relationship(type: "PLAYER_RANK_PLAYER_TEAM", direction: OUT, properties: "PlayerRankTeamPlayerInfo")
 }
 
-fragment PlayerRankTeamFragment on PlayerRankTeam {
-  id
-  level {
-    ...PlayerRankLevelFragment
-  }
-  status
-  sortOrder
-  displayName
-  photoUrl
-  seasonDescription
-}
-
 type PlayerRankTeamLevel @entity {
   id: ID! @id(autogenerate: false)
   organization: PlayerRankOrganization @lazy @relationship(type: "PLAYER_RANK_LEVEL", direction: IN)
@@ -505,6 +706,16 @@ type PlayerRankTeamLevel @entity {
   sortOrder: Int!
   displayName: String!
   description: String
+}
+
+type PlayerRankWorkout @entity {
+  id: ID! @id
+  player: PlayerRankOrganizationPlayer @lazy @relationship(type: "PLAYER_RANK_PLAYER_WORKOUT", direction: OUT)
+  workoutDate: DateTime!
+  drill: PlayerRankDrill @eager @relationship(type: "PLAYER_RANK_WORKOUT_DRILL", direction: OUT)
+  duration: TimeSpan!
+  notes: String
+  areasOfFocus: [PlayerRankPlayerFocusArea!]! @eager @relationship(type: "PLAYER_RANK_WORKOUT_DRILL", direction: OUT)
 }
 
 type Query {
@@ -535,17 +746,6 @@ type Reaction @node @entity {
   subject: Ref! @eager @relationship(type: "REACTION_SUBJECT", direction: OUT)
   dateCreated: DateTime! @timestamp(operations: [CREATE])
   dateModified: DateTime! @timestamp(operations: [CREATE, UPDATE])
-}
-
-fragment ReactionFragment on Reaction {
-  id
-  author {
-    ...UserContactFragment
-  }
-  comment
-  dateCreated
-  dateModified
-  emote
 }
 
 type RefFormat @entity {
@@ -641,6 +841,132 @@ union ClipFormat = SimpleFormat | RefFormat
 union Fact @mixin(name: "FactMixin") = Memory | SpecialEvent
 
 union Media @union(interface: "IMedia") = ImageMedia | VideoMedia
+
+union PlayerRankNode @selection(prefix: "Partial", fields: ["id", "displayName"]) @mixin(name: "PlayerNodeMixin") = PlayerRankEvalNode | PlayerRankLogicalNode
+
+fragment PlayerRankNodeFragment on PlayerRankNode {
+  ... on PlayerRankLogicalNode {
+    ...PlayerRankLogicalNodeFragment
+  }
+  ... on PlayerRankEvalNode {
+    ...PlayerRankEvalNodeFragment
+  }
+}
+
+fragment PlayerRankOrganizationCoachFragment on PlayerRankOrganizationCoach {
+  id
+  contact {
+    ...ContactFragment
+  }
+  organization {
+    ...PartialPlayerRankOrganizationFragment
+  }
+  inactiveDate
+  joinDate
+  notes
+  role
+}
+
+fragment PlayerRankOrganizationFragment on PlayerRankOrganization {
+  id
+  tribe {
+    ...TribeFragment
+  }
+  levels {
+    ...PlayerRankLevelFragment
+  }
+  teams {
+    ...PlayerRankTeamFragment
+  }
+  system {
+    ...PlayerRankSystemFragment
+  }
+}
+
+fragment PlayerRankOrganizationPlayerFragment on PlayerRankOrganizationPlayer {
+  id
+  evaluation {
+    ...PlayerRankPlayerEvaluationFragment
+  }
+  contact {
+    ...ContactFragment
+  }
+  organization {
+    ...PartialPlayerRankOrganizationFragment
+  }
+  overallRating
+  inactiveDate
+  joinDate
+  notes
+  positions
+}
+
+fragment PlayerRankPlayerEvaluationFragment on PlayerRankPlayerEvaluation {
+  id
+  player {
+    ...PartialPlayerRankOrganizationPlayerFragment
+  }
+  points {
+    ...PlayerRankEvaluationPointFragment
+  }
+  system {
+    ...PartialPlayerRankSystemFragment
+  }
+  dateCreated
+  dateModified
+}
+
+fragment PlayerRankPlayerFocusAreaFragment on PlayerRankPlayerFocusArea {
+  id
+  active
+  startDate
+  displayName
+  notes
+  sortOrder
+}
+
+fragment PlayerRankSystemFragment on PlayerRankSystem {
+  id
+  displayName
+  description
+  photoUrl
+}
+
+fragment PlayerRankTeamFragment on PlayerRankTeam {
+  id
+  level {
+    ...PlayerRankLevelFragment
+  }
+  status
+  sortOrder
+  displayName
+  photoUrl
+  seasonDescription
+}
+
+fragment PlayerRankWorkoutFragment on PlayerRankWorkout {
+  id
+  workoutDate
+  drill {
+    ...PlayerRankDrillFragment
+  }
+  duration
+  notes
+  areasOfFocus {
+    ...PlayerRankPlayerFocusAreaFragment
+  }
+}
+
+fragment ReactionFragment on Reaction {
+  id
+  author {
+    ...UserContactFragment
+  }
+  comment
+  dateCreated
+  dateModified
+  emote
+}
 
 union Ref @interfaces(name: "IRef") @selection(prefix: "Simple", fields: ["id", "displayName", "photoUrl"]) = Contact | PhysicalLocation | Tribe | Memory
 

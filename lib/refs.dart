@@ -21,7 +21,8 @@ abstract class JoinRecordData {
 /// Represents a join between records which also contains properties about the relationship.
 /// property node The target entity that's referenced
 /// property self The
-class JoinRecord<T1 extends Entity, T2 extends Entity, D extends JoinRecordData> {
+class JoinRecord<T1 extends Entity, T2 extends Entity,
+    D extends JoinRecordData> {
   T1 node;
 
   T2? _self;
@@ -61,8 +62,8 @@ class JoinRecord<T1 extends Entity, T2 extends Entity, D extends JoinRecordData>
   }
 }
 
-extension ListOfJoinRecordExt<T1 extends Entity, T2 extends Entity, D extends JoinRecordData> on List<
-    JoinRecord<T1, T2, D>>? {
+extension ListOfJoinRecordExt<T1 extends Entity, T2 extends Entity,
+    D extends JoinRecordData> on List<JoinRecord<T1, T2, D>>? {
   /// Sets the [JoinRecord.self] property for all items in a list
   set self(T2 self) {
     final me = this;
@@ -81,8 +82,6 @@ extension ListOfJoinRecordExt<T1 extends Entity, T2 extends Entity, D extends Jo
   }
 }
 
-
-
 extension JsonValueExt on Object? {
   T get<T extends Object?>(name) {
     if (this == null) {
@@ -99,43 +98,47 @@ abstract class GraphRefInput {
   Object? toJson();
 }
 
-class NullableGraphRef<E extends Entity, C extends GraphInput, U extends GraphInput>
-    implements GraphRefInput {
+class NullableGraphRef<E extends Entity, C extends GraphInput,
+    U extends GraphInput> implements GraphRefInput {
   final String? _linkedId;
   final C? _create;
   final U? _update;
   final String? _recordType;
   final bool isDisconnect;
+  final String? refLabel;
 
   bool get canDisconnect => true;
 
-  const NullableGraphRef.connect(this._linkedId, [this._recordType])
+  const NullableGraphRef.connect(this._linkedId,
+      [this._recordType, this.refLabel])
       : _create = null,
         isDisconnect = false,
         _update = null;
 
-  NullableGraphRef.update(String id, U update, [this._recordType])
+  NullableGraphRef.update(String id, U update,
+      [this._recordType, this.refLabel])
       : _update = update,
         isDisconnect = false,
         _linkedId = id,
         _create = null;
 
-  NullableGraphRef.connection(E entity, [String? _recordType])
+  NullableGraphRef.connection(E entity, [String? _recordType, this.refLabel])
       : _linkedId = entity.id,
-        _recordType =
-        (_recordType ?? ((entity is BaseSunnyEntity) ? capitalize(
-            (entity as BaseSunnyEntity).mtype.artifactId!) : null)),
+        _recordType = (_recordType ??
+            ((entity is BaseSunnyEntity)
+                ? capitalize((entity as BaseSunnyEntity).mtype.artifactId!)
+                : null)),
         _update = null,
         isDisconnect = false,
         _create = null;
 
-  NullableGraphRef.create(C entity, [this._recordType])
+  NullableGraphRef.create(C entity, [this._recordType, this.refLabel])
       : _create = entity,
         _update = null,
         isDisconnect = false,
         _linkedId = null;
 
-  const NullableGraphRef.disconnect()
+  const NullableGraphRef.disconnect([this.refLabel])
       : _linkedId = null,
         _create = null,
         _recordType = null,
@@ -163,24 +166,25 @@ class NullableGraphRef<E extends Entity, C extends GraphInput, U extends GraphIn
           }
         },
         // if (_recordType == null)
-        if (canDisconnect)
-          "disconnect": {
-            "where": {
-              "node": {
-                "id_NOT": _linkedId,
-              }
-            }
-          }
+        // if (canDisconnect)
+        // "disconnect": {
+        //   "where": {
+        //     "node": {
+        //       "id_NOT": _linkedId,
+        //     }
+        //   }
+        // }
       };
     }
 
     return (_recordType != null && json != null)
         ? {
-      _recordType: json,
-    }
+            _recordType: json,
+          }
         : json;
   }
 
+  String? get linkedId => _linkedId;
   Object? toJson() => relatedJson;
 
   C? get create => _create;
@@ -188,51 +192,55 @@ class NullableGraphRef<E extends Entity, C extends GraphInput, U extends GraphIn
   U? get update => _update;
 }
 
-class NullableExtGraphRef<R extends Entity, E extends JoinRecordData, C extends GraphInput, U extends GraphInput>
-    implements GraphRefInput {
+class NullableExtGraphRef<R extends Entity, E extends JoinRecordData,
+    C extends GraphInput, U extends GraphInput> implements GraphRefInput {
   final String? _linkedId;
   final E? _props;
   final C? _create;
   final U? _update;
   final bool isDisconnect;
-
+  final String? _recordType;
   String get linkedId => linkedId;
+  final String? refLabel;
 
-  const NullableExtGraphRef.connect(this._linkedId, E props)
+  const NullableExtGraphRef.connect(this._linkedId, E props,
+      [this._recordType, this.refLabel])
       : _create = null,
         _props = props,
         isDisconnect = false,
         _update = null;
 
-  NullableExtGraphRef.connection(JoinRecord<R, Entity, E> entity)
+  NullableExtGraphRef.connection(JoinRecord<R, Entity, E> entity,
+      [this._recordType, this.refLabel])
       : _linkedId = entity.node.mkey?.mxid,
         _props = entity.details,
         _update = null,
         isDisconnect = false,
         _create = null;
 
-  NullableExtGraphRef.create(C entity, E props)
+  NullableExtGraphRef.create(C entity, E props,
+      [this._recordType, this.refLabel])
       : _create = entity,
         _update = null,
         _props = props,
         isDisconnect = false,
         _linkedId = null;
 
-  const NullableExtGraphRef.disconnect()
+  const NullableExtGraphRef.disconnect([this._recordType, this.refLabel])
       : _linkedId = null,
         _create = null,
         _props = null,
         isDisconnect = true,
         _update = null;
 
-  @override
-  FieldRefInput? get relatedJson {
+  FieldRefInput? buildJson({bool includeRecordType = true}) {
+    late dynamic json;
     if (_create != null) {
-      return {"node": _create!.toJson()};
+      json = {"node": _create!.toJson()};
     } else if (_linkedId == null) {
-      return isDisconnect ? {"disconnect": {}} : null;
+      json = isDisconnect ? {"disconnect": {}} : null;
     } else {
-      return {
+      json = {
         "connect": {
           "where": {
             "node": {
@@ -241,30 +249,44 @@ class NullableExtGraphRef<R extends Entity, E extends JoinRecordData, C extends 
           },
           "edge": (_props!.toJson() as Object?)?.withoutKey('node'),
         },
-        "disconnect": {
-          "where": {
-            "node": {
-              "id_NOT": _linkedId,
-            }
-          }
-        }
+        // "disconnect": {
+        //   "where": {
+        //     "node": {
+        //       "id_NOT": _linkedId,
+        //     }
+        //   }
+        // }
       };
     }
+    return (_recordType != null && json != null && includeRecordType == true)
+        ? {
+            _recordType: json,
+          }
+        : json;
+  }
+
+  @override
+  FieldRefInput? get relatedJson {
+    return buildJson();
   }
 
   @override
   Object? toJson() => relatedJson;
 }
 
-class ExtGraphRef<R extends Entity, E extends JoinRecordData, C extends GraphInput, U extends GraphInput>
-    extends NullableExtGraphRef<R, E, C, U> {
-  ExtGraphRef.connect(String linkedId, E props)
-      : super.connect(linkedId, props);
+class ExtGraphRef<
+    R extends Entity,
+    E extends JoinRecordData,
+    C extends GraphInput,
+    U extends GraphInput> extends NullableExtGraphRef<R, E, C, U> {
+  ExtGraphRef.connect(String linkedId, E props, [String? recordType])
+      : super.connect(linkedId, props, recordType);
 
-  ExtGraphRef.connection(JoinRecord<R, Entity, E> entity)
-      : super.connection(entity);
+  ExtGraphRef.connection(JoinRecord<R, Entity, E> entity, [String? recordType])
+      : super.connection(entity, recordType);
 
-  ExtGraphRef.create(C entity, E props) : super.create(entity, props);
+  ExtGraphRef.create(C entity, E props, [String? recordType])
+      : super.create(entity, props, recordType);
 }
 
 class GraphRef<E extends Entity, C extends GraphInput, U extends GraphInput>
@@ -287,15 +309,15 @@ class GraphRef<E extends Entity, C extends GraphInput, U extends GraphInput>
   Object? toJson() => relatedJson;
 }
 
-class NullableUnionGraphRef<E extends Entity, C extends GraphInput, U extends GraphInput>
-    extends NullableGraphRef<E, C, U> {
+class NullableUnionGraphRef<E extends Entity, C extends GraphInput,
+    U extends GraphInput> extends NullableGraphRef<E, C, U> {
   NullableUnionGraphRef.connect(String linkedId, String recordType)
       : super.connect(linkedId, recordType);
 
   NullableUnionGraphRef.connection(E entity)
       : assert(entity is BaseSunnyEntity),
-        super.connect(
-          entity.id, capitalize((entity as BaseSunnyEntity).mtype.artifactId!));
+        super.connect(entity.id,
+            capitalize((entity as BaseSunnyEntity).mtype.artifactId!));
 
   NullableUnionGraphRef.create(C create, String recordType)
       : super.create(create, recordType);
@@ -309,15 +331,15 @@ class NullableUnionGraphRef<E extends Entity, C extends GraphInput, U extends Gr
   Object? toJson() => relatedJson;
 }
 
-class UnionGraphRef<E extends Entity, C extends GraphInput, U extends GraphInput>
-    extends GraphRef<E, C, U> {
+class UnionGraphRef<E extends Entity, C extends GraphInput,
+    U extends GraphInput> extends GraphRef<E, C, U> {
   UnionGraphRef.connect(String linkedId, String recordType)
       : super.connect(linkedId, recordType);
 
   UnionGraphRef.connection(E entity)
       : assert(entity is BaseSunnyEntity),
-        super.connect(
-          entity.id, capitalize((entity as BaseSunnyEntity).mtype.artifactId!));
+        super.connect(entity.id,
+            capitalize((entity as BaseSunnyEntity).mtype.artifactId!));
 
   UnionGraphRef.create(C create, String recordType)
       : super.create(create, recordType);
@@ -339,11 +361,8 @@ class GraphEnum<T> {
   T toJson() => value;
 }
 
-class GraphRefList<E extends Entity, C extends GraphInput, U extends GraphInput, G extends NullableGraphRef<
-    E,
-    C,
-    U>>
-    implements GraphRefInput {
+class GraphRefList<E extends Entity, C extends GraphInput, U extends GraphInput,
+    G extends NullableGraphRef<E, C, U>> implements GraphRefInput {
   final Iterable<G> _connect;
   final Iterable<String> _disconnect;
   final bool isReplace;
@@ -378,11 +397,13 @@ class GraphRefList<E extends Entity, C extends GraphInput, U extends GraphInput,
     }
     final _connectList = _connect.where((c) => c._linkedId != null);
     for (var connect in _connectList) {
-      _connectByType.putIfAbsent(connect._recordType, () => []).add(
-          connect._linkedId!);
+      _connectByType
+          .putIfAbsent(connect._recordType, () => [])
+          .add(connect._linkedId!);
     }
 
-    if (_connectList.isNotEmpty || _disconnect.isNotEmpty ||
+    if (_connectList.isNotEmpty ||
+        _disconnect.isNotEmpty ||
         _createList.isNotEmpty) {
       var result = {};
       if (isReplace) {
@@ -438,19 +459,45 @@ class GraphRefList<E extends Entity, C extends GraphInput, U extends GraphInput,
 
   @override
   Object? toJson() => relatedJson;
+
+  GraphRefList<E, C, U, G> withConnection({E? record, String? linkedId}) {
+    var id = record?.id ?? linkedId;
+    if (id == null) {
+      return this;
+    }
+    return GraphRefList(connect: [
+      ..._connect,
+      GraphRef<E, C, U>.connect(id) as G,
+    ], disconnect: _disconnect);
+  }
+
+  GraphRefList<E, C, U, G> withoutConnection({E? record, String? linkedId}) {
+    var id = record?.id ?? linkedId;
+    if (id == null) {
+      return this;
+    }
+    return GraphRefList(connect: [
+      for (final c in _connect)
+        if (c.linkedId != id) c,
+    ], disconnect: _disconnect);
+  }
 }
 
-class ExtGraphRefList<R extends Entity, E extends JoinRecordData, C extends GraphInput, U extends GraphInput,
-G extends ExtGraphRef<R, E, C, U>>
-    implements GraphRefInput {
+class ExtGraphRefList<
+    R extends Entity,
+    E extends JoinRecordData,
+    C extends GraphInput,
+    U extends GraphInput,
+    G extends ExtGraphRef<R, E, C, U>> implements GraphRefInput {
   final List<G> _connect;
   final List<String> _disconnect;
   final bool _isAll;
   final bool isReplace;
 
   const ExtGraphRefList(
-      {List<G> connect = const [], List<String> disconnect = const [
-      ], required this.isReplace})
+      {List<G> connect = const [],
+      List<String> disconnect = const [],
+      required this.isReplace})
       : _connect = connect,
         _isAll = true,
         _disconnect = disconnect;
@@ -482,38 +529,98 @@ G extends ExtGraphRef<R, E, C, U>>
 
   @override
   FieldRefInput? get relatedJson {
-    var data = <String, dynamic>{};
-    if (_connect.isNotEmpty || _disconnect.isNotEmpty) {
-      for (var ref in _connect) {
-        if (ref._create != null) {
-          final list = data.putIfAbsent('create', () => []) as List;
-          list.add({
+    var _byType = <String?, List<dynamic>>{};
+    for (var ref in _connect) {
+      var updates = _byType.putIfAbsent(ref._recordType, () => []);
+      if (ref._create != null) {
+        // final list = data.putIfAbsent('create', () => []) as List;
+        updates.add({
+          "create": {
             "node": ref._create!.toJson(),
             "edge": (ref._props!.toJson() as Object?)?.withoutKey('node'),
-          });
-        } else if (ref._linkedId != null) {
-          final list = data.putIfAbsent('connect', () => []) as List;
-          list.add({
+          }
+        });
+      } else if (ref._linkedId != null) {
+        updates.add({
+          "connect": {
             "where": {
               "node": {"id": ref._linkedId!},
             },
             "edge": (ref._props!.toJson() as Object?)?.withoutKey('node'),
-          });
-        }
+          }
+        });
       }
     }
-    if (isReplace) {
-      data["disconnect"] = {
-        "where": {
-          "node": {
-            "id_NOT_IN": _connect.map((e) => e._linkedId)
-                .whereType<String>()
-                .toList(),
+    // final _createList = _connect.where((c) => c._create != null);
+    // final _createByType = <String?, List<C>>{};
+    // final _connectByType = <String?, List<String>>{};
+    // for (var item in _createList) {
+    //   _createByType.putIfAbsent(item._recordType, () => []).add(item._create!);
+    // }
+    // final _connectList = _connect.where((c) => c._linkedId != null);
+    // for (var connect in _connectList) {
+    //   _connectByType
+    //       .putIfAbsent(connect._recordType, () => [])
+    //       .add(connect._linkedId!);
+    // }
+
+    // if (_connect.isNotEmpty || _disconnect.isNotEmpty) {
+    //   for (var ref in _connect) {
+    //     if (ref._create != null) {
+    //       final list = data.putIfAbsent('create', () => []) as List;
+    //       list.add({
+    //         "node": ref._create!.toJson(),
+    //         "edge": (ref._props!.toJson() as Object?)?.withoutKey('node'),
+    //       });
+    //     } else if (ref._linkedId != null) {
+    //       final list = data.putIfAbsent('connect', () => []) as List;
+    //       list.add({
+    //         "where": {
+    //           "node": {"id": ref._linkedId!},
+    //         },
+    //         "edge": (ref._props!.toJson() as Object?)?.withoutKey('node'),
+    //       });
+    //     }
+    //   }
+    // }
+
+    var types = _byType.keys;
+    if (types.length == 1 && types.first == null) {
+      return [
+        ..._byType.values.first,
+        if (isReplace)
+          {
+            "disconnect": {
+              "where": {
+                "node": {
+                  "id_NOT_IN": _connect
+                      .map((e) => e._linkedId)
+                      .whereType<String>()
+                      .toList(),
+                }
+              }
+            },
           }
-        }
-      };
+      ];
+    } else {
+      if (isReplace) {
+        _byType.values.forEach((element) {
+          element.add({
+            "disconnect": {
+              "where": {
+                "node": {
+                  "id_NOT_IN": _connect
+                      .map((e) => e._linkedId)
+                      .whereType<String>()
+                      .toList(),
+                }
+              }
+            },
+          });
+        });
+      }
+      return _byType;
     }
-    return data.isEmpty ? null : data;
   }
 
   @override
@@ -539,7 +646,8 @@ Map<String, dynamic>? relatedToJson(List<RelatedBuilder> rel) {
 /// This is more complicated because previously we were needing to pull the field json out into a separate root
 RelatedBuilder relatedFieldJson(String fieldName, dynamic json) {
   return (JsonObject map) {
-    if (json == null || (json is Map && json.isEmpty) ||
+    if (json == null ||
+        (json is Map && json.isEmpty) ||
         (json is Iterable && json.isEmpty)) {
       return;
     }

@@ -26,7 +26,8 @@ void buildBaseClass(
           ..body = CodeBuilder.lines([
             'final type = json["__typename"];',
             'switch (type) {',
-            for (var subType in subTypes) '  case "${subType}": return ${subType}.fromJson(json);',
+            for (var subType in subTypes)
+              '  case "${subType}": return ${subType}.fromJson(json);',
             '  default:',
             '    throw "Unknown subtype of ${classDef.name}: \$type";',
             '}',

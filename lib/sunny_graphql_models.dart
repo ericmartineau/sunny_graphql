@@ -5,6 +5,7 @@ import 'package:gql/ast.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:inflection3/inflection3.dart';
 import 'package:sunny_graphql/fragments.dart';
+import 'package:sunny_graphql/meta.dart';
 import 'package:sunny_sdk_core/api_exports.dart';
 import 'package:sunny_sdk_core/mverse.dart';
 import 'package:sunny_sdk_core/mverse/m_base_model.dart';
@@ -24,7 +25,9 @@ extension NonNullObjectGraphQLExt on Object {
   }
 }
 
-abstract class BaseGraphInput with MBaseModelMixin implements GraphInput {
+abstract class BaseGraphInput
+    with MBaseModelMixin, HasGraphMeta
+    implements GraphInput {
   T get<T>(String key) {
     return this[key] as T;
   }
@@ -60,7 +63,8 @@ mixin JoinTypeMixin<N extends BaseSunnyEntity> {
   Object? toJson();
 }
 
-abstract class BaseSunnyEntity with MBaseModelMixin, DiffDelegateMixin {
+abstract class BaseSunnyEntity
+    with MBaseModelMixin, DiffDelegateMixin, HasGraphMeta {
   String? get id;
 
   // Map<String, dynamic> toMap();
@@ -76,8 +80,6 @@ abstract class BaseSunnyEntity with MBaseModelMixin, DiffDelegateMixin {
   dynamic operator [](key) => throw "Not implemented";
 
   void operator []=(String key, value) => throw "Not implemented";
-
-  MSchemaRef get mtype;
 
   @override
   String toString() {
@@ -95,7 +97,8 @@ abstract class BaseSunnyEntity with MBaseModelMixin, DiffDelegateMixin {
   }
 
   dynamic clone() {
-    return GraphClientConfig.read(toMap(), typeName: mtype.artifactId!.capitalize(), isNullable: false);
+    return GraphClientConfig.read(toMap(),
+        typeName: mtype.artifactId!.capitalize(), isNullable: false);
   }
 
   void takeFrom(dynamic source) {
@@ -121,10 +124,13 @@ abstract class GraphQueryResolver {
   GraphOperation? getOperation(String entityName, String op);
 
   DocumentNode getOrCreateQuery(String name, String type, String gql());
-  DocumentNode getOrBuildQuery(String name, String type, OperationDefinitionNode gql());
+  DocumentNode getOrBuildQuery(
+      String name, String type, OperationDefinitionNode gql());
 }
 
-class Neo4JGraphQueryResolver with FragmentManager implements GraphQueryResolver {
+class Neo4JGraphQueryResolver
+    with FragmentManager
+    implements GraphQueryResolver {
   final _queries = <String, GraphOperation>{};
 
   @override
@@ -223,7 +229,9 @@ class Neo4JGraphQueryResolver with FragmentManager implements GraphQueryResolver
           FieldNode(
             name: NameNode(value: artifactPlural),
             arguments: [
-              ArgumentNode(name: NameNode(value: "where"), value: rootWhere.toValueNode()),
+              ArgumentNode(
+                  name: NameNode(value: "where"),
+                  value: rootWhere.toValueNode()),
             ],
             selectionSet: SelectionSetNode(
               selections: [
@@ -238,7 +246,8 @@ class Neo4JGraphQueryResolver with FragmentManager implements GraphQueryResolver
                   ],
                   selectionSet: SelectionSetNode(
                     selections: [
-                      FragmentSpreadNode(name: NameNode(value: '${relatedType}Fragment')),
+                      FragmentSpreadNode(
+                          name: NameNode(value: '${relatedType}Fragment')),
                     ],
                   ),
                 )
@@ -302,7 +311,8 @@ class Neo4JGraphQueryResolver with FragmentManager implements GraphQueryResolver
   }
 
   @override
-  DocumentNode getOrCreateQuery(String name, String type, String Function() generateQuery) {
+  DocumentNode getOrCreateQuery(
+      String name, String type, String Function() generateQuery) {
     return _queries.putIfAbsent(name, () {
       final document = this.operation(generateQuery());
       return GraphOperation(name, type, document);
@@ -310,7 +320,8 @@ class Neo4JGraphQueryResolver with FragmentManager implements GraphQueryResolver
   }
 
   @override
-  DocumentNode getOrBuildQuery(String name, String type, OperationDefinitionNode Function() generateQuery) {
+  DocumentNode getOrBuildQuery(String name, String type,
+      OperationDefinitionNode Function() generateQuery) {
     return _queries.putIfAbsent(name, () {
       final document = this.operationFromNode(generateQuery());
       return GraphOperation(name, type, document);
@@ -357,7 +368,8 @@ class GraphOperation with EquatableMixin {
 }
 
 extension DocumentNodeOperationGetter on DocumentNode {
-  OperationDefinitionNode get firstOp => definitions.whereType<OperationDefinitionNode>().first;
+  OperationDefinitionNode get firstOp =>
+      definitions.whereType<OperationDefinitionNode>().first;
 }
 
 extension _ObjectToValueNode on Object? {

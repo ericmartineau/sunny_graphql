@@ -1,6 +1,5 @@
 name: sunny_graphql_generator
-description: >
-  A generator for creating models and services to hit graphql endpoints
+description: A generator for creating models and services to hit graphql endpoints
 version: 1.11.0
 
 environment:
@@ -12,31 +11,24 @@ dependencies:
   flutter_degen: ^0.8.0+2
   build_runner: ^2.1.4
   source_gen: ^1.1.1
-
+  equatable: ^2.0.3
   sunny_dart: ^0.11.0+7
   sunny_sdk_core: ^2.4.0+11
   build: ^2.1.1
   code_builder: ^4.1.0
   dart_style: ^2.2.0
-  analyzer: ^2.7.0
+  analyzer: ^3.4.1
   dartxx: ^0.5.3+2
+  http: ^0.13.4
   inflection3: ^0.5.3+2
   flexidate: ^0.8.0+3
   meta: ^1.7.0
   pedantic: ^1.11.1
-  sunny_graphql:
-    path: ../
+  sunny_graphql: ^1.0.1
   uri: ^1.0.0
 
 dev_dependencies:
   build_config: ^1.0.0
 
-dependency_overrides:
-  sunny_sdk_core:
-    path: ../../sunny_sdk_core
-
-  meta: ^1.7.0
-  sunny_graphql:
-    path: ../
 flutter:
   uses-material-design: false

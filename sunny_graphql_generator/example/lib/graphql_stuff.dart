@@ -10,7 +10,9 @@ import 'package:sunny_sdk_core/mverse.dart';
 import 'package:sunny_sdk_core/mverse/m_base_model.dart';
 import 'package:sunny_sdk_core/data.dart';
 
-part 'graphql_stuff.g.dart';
+part 'graphql_stuff.g.api.dart';
+part 'graphql_stuff.g.impl.dart';
+part 'graphql_stuff.g.meta.dart';
 
 abstract class IRef {
   Uri? get photoUrl;
@@ -19,8 +21,16 @@ abstract class IRef {
 
 typedef FormatValue = dynamic;
 
+abstract class IsContact {
+  IRef get contact;
+}
+
 abstract class HasPhases {}
 
+typedef EvaluationScore = Object;
+typedef PlayerPosition = String;
+typedef MetricLabels = List<String>;
+mixin PlayerNodeMixin {}
 final MyFragment = gql("""
 fragment SuperSimpleRef on Ref {
   __typename
@@ -38,7 +48,7 @@ abstract class TribeApiMixin {}
   typeMap: {
     'IRef': 'IRef',
     'IFact': 'IFact',
-    'fd': 's213d123',
+    'fd': 's1d33',
   },
   fieldNameMappers: fieldSuffixes,
   typeNameMappers: typeNameMap,

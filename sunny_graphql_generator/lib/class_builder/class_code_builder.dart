@@ -3,7 +3,6 @@ import 'package:dartxx/dartxx.dart';
 import 'package:gql/ast.dart';
 import 'package:sunny_graphql_generator/class_builder/build_abstract_class.dart';
 import 'package:sunny_graphql_generator/class_builder/build_base_class.dart';
-import 'package:sunny_graphql_generator/code_builder.dart';
 import 'package:sunny_graphql_generator/model.dart';
 
 import '../shared.dart';
@@ -23,6 +22,7 @@ Class classDefinition(
   Iterable<String> subTypes = const {},
   required bool isJoinRecord,
   Iterable<String> interfaces = const [],
+  Iterable<String> extraMixins = const [],
   required Iterable<FieldDefinition> fields,
   required List<DirectiveNode> directives,
   bool isAbstract = false,
@@ -48,10 +48,13 @@ Class classDefinition(
         classDef..implements.add(refer("JoinRecordData"));
       }
 
-      final annotatedMixins = isInput ? directives.mixinInputNames : directives.mixinNames;
-      final annotatedInterfaces = isInput ? directives.interfaceInputNames : directives.interfaceNames;
+      final annotatedMixins =
+          isInput ? directives.mixinInputNames : directives.mixinNames;
+      final annotatedInterfaces =
+          isInput ? directives.interfaceInputNames : directives.interfaceNames;
       var ifaces = <String>{
-        for (var extra in model.getExtraInterfaces(rootName)) '${extra.toDartType(withNullability: false)}${suffix}',
+        for (var extra in model.getExtraInterfaces(rootName))
+          '${extra.toDartType(withNullability: false)}${suffix}',
         ...annotatedInterfaces,
         for (var iface in interfaces)
           if (!iface.contains("Mixin")) iface,
@@ -101,26 +104,7 @@ Class classDefinition(
       }
 
       if (!isJoinRecord) {
-        classDef
-          ..implements.add(refer('MBaseModel'))
-          ..methods.addAll(
-            [
-              Method(
-                (f) => f
-                  ..name = 'mtype'
-                  ..type = MethodType.getter
-                  ..returns = refer('MSchemaRef')
-                  ..body = Code('return ${rootName}.ref;'),
-              ),
-              Method(
-                (f) => f
-                  ..name = 'mfields'
-                  ..type = MethodType.getter
-                  ..returns = refer('Set<String>')
-                  ..body = Code('return ${rootName}Fields.values;'),
-              ),
-            ],
-          );
+        classDef..implements.add(refer('MBaseModel'));
       }
 
       if (isInput) {

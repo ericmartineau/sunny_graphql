@@ -3,22 +3,50 @@ targets:
     builders:
       sunny_graphql_generator:
         enabled: true
+      sunny_graphql_generator|sunny_graphql_api_generator:
+        enabled: true
+      sunny_graphql_generator|sunny_graphql_meta_generator:
+        enabled: true
 
 
 builders:
-  sunny_graphql_generator:
+  sunny_graphql_meta_generator:
     import: "package:sunny_graphql_generator/build.dart"
     builder_factories:
-      - "sunnyGraphQL"
-    build_extensions: { ".dart": [ ".graphql.g.part" ] }
+      - "sunnyGraphQLMeta"
+    auto_apply: dependents
+    build_extensions: { ".dart": [ ".meta.g.part" ] }
+    build_to: source
+    applies_builders:
+      - "source_gen"
+
+
+  sunny_graphql_api_generator:
+    import: "package:sunny_graphql_generator/build.dart"
+    builder_factories:
+      - "sunnyGraphQLAPI"
+    build_extensions: { ".dart": [ ".api.g.part" ] }
     auto_apply: dependents
     build_to: source
     applies_builders:
-      - "source_gen|combining_builder"
-    runs_before:
-      - sunny_fluro_generator:fluro_routes
-      - flutter_degen:degen
-      - sunny_fluro_generator:fluro_route
+      - "source_gen"
+
+  sunny_graphql_generator:
+    import: "package:sunny_graphql_generator/build.dart"
+    builder_factories:
+      - "sunnyGraphQLImplementation"
+    build_extensions: { ".dart": [ ".impl.g.part" ] }
+    auto_apply: dependents
+    build_to: source
+    applies_builders:
+      - "source_gen"
+
+
+
+
+
+
+
 
 
 
