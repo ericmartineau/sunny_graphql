@@ -1,3 +1,23 @@
+## 1.13.0
+
+ - **FEAT**: testing version bump.
+
+## 1.12.0
+
+ - **FEAT**: testing version bump.
+
+## 1.11.0
+
+ - **FEAT**: testing version bump.
+
+## 1.10.0
+
+ - **FEAT**: testing version bump.
+
+## 1.9.0
+
+ - **FEAT**: testing version bump.
+
 ## 1.8.0
 
  - **FEAT**: Prep for melos release.
