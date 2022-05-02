@@ -1,6 +1,6 @@
 name: sunny_graphql_generator
 description: A generator for creating models and services to hit graphql endpoints
-version: 1.11.0
+version: 1.14.0
 homepage: https://github.com/ericmartineau/sunny_graphql/sunny_graphql_generator
 
 environment:
@@ -25,7 +25,7 @@ dependencies:
   flexidate: ^0.8.0+3
   meta: ^1.7.0
   pedantic: ^1.11.1
-  sunny_graphql: ^1.0.1
+  sunny_graphql: ^1.3.0
   uri: ^1.0.0
 
 dev_dependencies:

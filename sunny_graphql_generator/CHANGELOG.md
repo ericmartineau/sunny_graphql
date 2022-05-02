@@ -1,3 +1,17 @@
+## 1.14.0
+
+ - **FEAT**: Prep for melos release.
+
+## 1.13.0
+
+ - **FEAT**: Prep for melos release.
+
+## 1.12.0
+
+ - **FEAT**: Prep for melos release.
+
+## [1.11.0]
+ * Melos release
 ## [1.7.0+1]
  * Updated minor version
 Updated bundle
