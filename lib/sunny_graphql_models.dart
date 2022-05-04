@@ -8,7 +8,6 @@ import 'package:sunny_graphql/fragments.dart';
 import 'package:sunny_graphql/meta.dart';
 import 'package:sunny_sdk_core/api_exports.dart';
 import 'package:sunny_sdk_core/mverse.dart';
-import 'package:sunny_sdk_core/mverse/m_base_model.dart';
 
 import 'graph_client_config.dart';
 

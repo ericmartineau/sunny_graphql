@@ -1,5 +1,4 @@
 import 'package:dartxx/json_path.dart';
-import 'package:sunny_graphql/sunny_graphql.dart';
 import 'package:sunny_sdk_core/api_exports.dart';
 import 'package:sunny_sdk_core/mverse.dart';
 

@@ -6,7 +6,6 @@ import 'package:sunny_graphql/neo4j_graph_client.dart';
 import 'package:sunny_graphql/sunny_graphql_models.dart';
 import 'package:sunny_sdk_core/api_exports.dart';
 import 'package:sunny_sdk_core/data/record_events.dart';
-import 'package:sunny_sdk_core/mverse.dart';
 
 import 'graph_client_config.dart';
 import 'graph_client_serialization.dart';

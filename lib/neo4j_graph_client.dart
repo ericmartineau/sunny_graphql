@@ -1,5 +1,4 @@
 import 'package:gql/ast.dart';
-import 'package:gql/language.dart' as lang;
 import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:inflection3/inflection3.dart';
 import 'package:sunny_graphql/graph_client_serialization.dart';
