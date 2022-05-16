@@ -10,12 +10,15 @@ dependencies:
   equatable: ^2.0.3
   pedantic: ^1.11.1
   uri: ^1.0.0
-  sunny_sdk_core: ^2.5.0
-  collection_diff: ^2.0.3+6
   inflection3: ^0.5.3+2
   graphql_flutter: ^5.0.0
   gql: ^0.13.0
-  dartxx: ^0.5.5
+  collection_diff: 
+    path: /Users/ericm/sunny/player_rank/packages/collection_diff
+  sunny_sdk_core: 
+    path: /Users/ericm/sunny/player_rank/packages/sunny_sdk_core
+  dartxx: 
+    path: /Users/ericm/sunny/player_rank/packages/dartxx
   flutter: 
     sdk: flutter
 dev_dependencies: 
