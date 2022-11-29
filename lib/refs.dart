@@ -1,5 +1,7 @@
+import 'package:gql/ast.dart';
 import 'package:sunny_graphql/sunny_graphql.dart';
 import 'package:sunny_sdk_core/api_exports.dart';
+import 'package:sunny_sdk_core/model_exports.dart';
 
 typedef JsonObject = Map<String, dynamic>;
 typedef JsonValue = dynamic;
@@ -53,6 +55,10 @@ class JoinRecord<T1 extends Entity, T2 extends Entity,
   JoinRecord<TT, TT2, D> cast2<TT extends Entity, TT2 extends Entity>() =>
       JoinRecord(node as TT, details, _self as TT2);
 
+  /// Recasts this record using the [T1] [node] and the [T2] [self] types.
+  JoinRecord<T1, TT2, D> castSelf<TT2 extends Entity>([TT2? self]) =>
+      JoinRecord(node, details, self ?? _self as TT2);
+
   dynamic toJson() {
     return {
       "node": (node as BaseSunnyEntity).toJson(),
@@ -91,31 +97,150 @@ extension JsonValueExt on Object? {
   }
 }
 
-abstract class GraphRefInput {
-  FieldRefInput? get relatedJson;
+enum GraphOperationType {
+  disconnect,
+  connect,
+  create,
+  connectOrCreate,
+  update;
 
+  String toString() {
+    return this.name;
+  }
+}
+
+abstract class GraphRefInput {
+  // FieldRefInput? get relatedJson;
+
+  /// Returns the full outer ref input, including the recordType and the operation
+  /// type
   Object? toJson();
+
+  // /// Returns just the inner guts, assuming the outer entity has grouped by recordType
+  // /// and operation
+  // Object? toInnerJson();
+}
+
+mixin SingleRefMixin implements GraphRefInput {
+  String? get linkedId;
+  GraphInput? get create;
+  GraphInput? get update;
+  bool get isDisconnect;
+  bool get canDisconnect;
+  Object? get edgeData;
+  String? get recordType;
+
+  GraphOperationType? get operation {
+    if (linkedId != null && create != null) {
+      return GraphOperationType.connectOrCreate;
+    } else if (isDisconnect && canDisconnect) {
+      return GraphOperationType.disconnect;
+    } else if (linkedId != null) {
+      return GraphOperationType.connect;
+    } else if (create != null) {
+      return GraphOperationType.create;
+    } else if (update != null) {
+      return GraphOperationType.update;
+    } else {
+      return null;
+    }
+  }
+
+  Object? toInnerJson() {
+    var op = operation;
+    if (op == null) return null;
+    switch (op) {
+      case GraphOperationType.disconnect:
+        return {
+          "where": {
+            "node": {
+              if (linkedId == null) "id_NOT": null else "id": linkedId!,
+            }
+          }
+        };
+      case GraphOperationType.connect:
+        return {
+          "where": {
+            "node": {
+              "id": linkedId!,
+            },
+          },
+          if (edgeData != null) "edge": edgeData,
+        };
+
+      case GraphOperationType.create:
+        return {
+          "node": create!.toJson(),
+          if (edgeData != null) 'edge': edgeData,
+        };
+
+      case GraphOperationType.connectOrCreate:
+        return {
+          "where": {
+            "node": {
+              "id": linkedId!,
+            }
+          },
+          'onCreate': {
+            'node': create!.toJson(),
+            if (edgeData != null) 'edge': edgeData,
+          }
+        };
+      case GraphOperationType.update:
+        return {
+          "where": {
+            "node": {
+              "id": linkedId!,
+            }
+          },
+          'update': {
+            'node': update!.toJson(),
+            if (edgeData != null) 'edge': edgeData,
+          }
+        };
+    }
+  }
+
+  @override
+  Object? toJson() {
+    var inner = toInnerJson();
+    if (inner == null) {
+      return null;
+    }
+    var json = {operation!.name: inner};
+    return (recordType != null)
+        ? {
+            recordType: json,
+          }
+        : json;
+  }
 }
 
 class NullableGraphRef<E extends Entity, C extends GraphInput,
-    U extends GraphInput> implements GraphRefInput {
+    U extends GraphInput> with SingleRefMixin {
   final String? _linkedId;
   final C? _create;
   final U? _update;
-  final String? _recordType;
+  final String? recordType;
   final bool isDisconnect;
   final String? refLabel;
 
-  bool get canDisconnect => true;
+  Object? get edgeData => null;
 
   const NullableGraphRef.connect(this._linkedId,
-      [this._recordType, this.refLabel])
+      [this.recordType, this.refLabel])
       : _create = null,
         isDisconnect = false,
         _update = null;
 
-  NullableGraphRef.update(String id, U update,
-      [this._recordType, this.refLabel])
+  const NullableGraphRef.connectOrCreate(String linkedId, C create,
+      [this.recordType, this.refLabel])
+      : _create = create,
+        _linkedId = linkedId,
+        isDisconnect = false,
+        _update = null;
+
+  NullableGraphRef.update(String id, U update, [this.recordType, this.refLabel])
       : _update = update,
         isDisconnect = false,
         _linkedId = id,
@@ -123,15 +248,15 @@ class NullableGraphRef<E extends Entity, C extends GraphInput,
 
   NullableGraphRef.connection(E entity, [String? _recordType, this.refLabel])
       : _linkedId = entity.id,
-        _recordType = (_recordType ??
+        recordType = (_recordType ??
             ((entity is BaseSunnyEntity)
-                ? capitalize((entity as BaseSunnyEntity).mtype.artifactId!)
+                ? capitalize((entity).mkey!.mtype.artifactId!)
                 : null)),
         _update = null,
         isDisconnect = false,
         _create = null;
 
-  NullableGraphRef.create(C entity, [this._recordType, this.refLabel])
+  NullableGraphRef.create(C entity, [this.recordType, this.refLabel])
       : _create = entity,
         _update = null,
         isDisconnect = false,
@@ -140,51 +265,13 @@ class NullableGraphRef<E extends Entity, C extends GraphInput,
   const NullableGraphRef.disconnect([this.refLabel])
       : _linkedId = null,
         _create = null,
-        _recordType = null,
+        recordType = null,
         isDisconnect = true,
         _update = null;
 
-  @override
-  FieldRefInput? get relatedJson {
-    var json;
-    if (_create != null) {
-      json = {
-        "create": {
-          "node": _create!.toJson(),
-        }
-      };
-    } else if (_linkedId == null) {
-      json = (canDisconnect && isDisconnect) ? {"disconnect": {}} : null;
-    } else {
-      json = {
-        "connect": {
-          "where": {
-            "node": {
-              "id": _linkedId,
-            }
-          }
-        },
-        // if (_recordType == null)
-        // if (canDisconnect)
-        // "disconnect": {
-        //   "where": {
-        //     "node": {
-        //       "id_NOT": _linkedId,
-        //     }
-        //   }
-        // }
-      };
-    }
-
-    return (_recordType != null && json != null)
-        ? {
-            _recordType: json,
-          }
-        : json;
-  }
+  bool get canDisconnect => true;
 
   String? get linkedId => _linkedId;
-  Object? toJson() => relatedJson;
 
   C? get create => _create;
 
@@ -192,14 +279,16 @@ class NullableGraphRef<E extends Entity, C extends GraphInput,
 }
 
 class NullableExtGraphRef<R extends Entity, E extends JoinRecordData,
-    C extends GraphInput, U extends GraphInput> implements GraphRefInput {
+    C extends GraphInput, U extends GraphInput> with SingleRefMixin {
   final String? _linkedId;
   final E? _props;
   final C? _create;
   final U? _update;
+  bool get isConnectOrCreate => _linkedId != null && _create != null;
   final bool isDisconnect;
   final String? _recordType;
-  String get linkedId => linkedId;
+
+  String? get linkedId => _linkedId;
   final String? refLabel;
 
   const NullableExtGraphRef.connect(this._linkedId, E props,
@@ -225,6 +314,14 @@ class NullableExtGraphRef<R extends Entity, E extends JoinRecordData,
         isDisconnect = false,
         _linkedId = null;
 
+  NullableExtGraphRef.connectOrCreate(String linkedId, C onCreate, E props,
+      [this._recordType, this.refLabel])
+      : _create = onCreate,
+        _update = null,
+        _props = props,
+        isDisconnect = false,
+        _linkedId = linkedId;
+
   const NullableExtGraphRef.disconnect([this._recordType, this.refLabel])
       : _linkedId = null,
         _create = null,
@@ -232,45 +329,20 @@ class NullableExtGraphRef<R extends Entity, E extends JoinRecordData,
         isDisconnect = true,
         _update = null;
 
-  FieldRefInput? buildJson({bool includeRecordType = true}) {
-    late dynamic json;
-    if (_create != null) {
-      json = {"node": _create!.toJson()};
-    } else if (_linkedId == null) {
-      json = isDisconnect ? {"disconnect": {}} : null;
-    } else {
-      json = {
-        "connect": {
-          "where": {
-            "node": {
-              "id": _linkedId,
-            }
-          },
-          "edge": (_props!.toJson() as Object?)?.withoutKey('node'),
-        },
-        // "disconnect": {
-        //   "where": {
-        //     "node": {
-        //       "id_NOT": _linkedId,
-        //     }
-        //   }
-        // }
-      };
-    }
-    return (_recordType != null && json != null && includeRecordType == true)
-        ? {
-            _recordType: json,
-          }
-        : json;
-  }
+  @override
+  bool get canDisconnect => true;
 
   @override
-  FieldRefInput? get relatedJson {
-    return buildJson();
-  }
+  GraphInput? get create => _create;
 
   @override
-  Object? toJson() => relatedJson;
+  Object? get edgeData => _props?.toJson() as Object?;
+
+  @override
+  String? get recordType => _recordType;
+
+  @override
+  GraphInput? get update => _update;
 }
 
 class ExtGraphRef<
@@ -278,6 +350,10 @@ class ExtGraphRef<
     E extends JoinRecordData,
     C extends GraphInput,
     U extends GraphInput> extends NullableExtGraphRef<R, E, C, U> {
+  ExtGraphRef.connectOrCreate(String linkedId, C create, E props,
+      [String? recordType])
+      : super.connectOrCreate(linkedId, create, props, recordType);
+
   ExtGraphRef.connect(String linkedId, E props, [String? recordType])
       : super.connect(linkedId, props, recordType);
 
@@ -293,6 +369,9 @@ class GraphRef<E extends Entity, C extends GraphInput, U extends GraphInput>
   GraphRef.connect(String linkedId, [String? recordType])
       : super.connect(linkedId, recordType);
 
+  GraphRef.connectOrCreate(String linkedId, C create, [String? recordType])
+      : super.connectOrCreate(linkedId, create, recordType);
+
   GraphRef.connection(E entity, [String? recordType])
       : super.connection(entity, recordType);
 
@@ -303,9 +382,6 @@ class GraphRef<E extends Entity, C extends GraphInput, U extends GraphInput>
       : super.update(id, update, recordType);
 
   bool get canDisconnect => false;
-
-  @override
-  Object? toJson() => relatedJson;
 }
 
 class NullableUnionGraphRef<E extends Entity, C extends GraphInput,
@@ -325,9 +401,6 @@ class NullableUnionGraphRef<E extends Entity, C extends GraphInput,
       : super.update(id, update, recordType);
 
   bool get canDisconnect => false;
-
-  @override
-  Object? toJson() => relatedJson;
 }
 
 class UnionGraphRef<E extends Entity, C extends GraphInput,
@@ -347,9 +420,6 @@ class UnionGraphRef<E extends Entity, C extends GraphInput,
       : super.update(id, update, recordType);
 
   bool get canDisconnect => false;
-
-  @override
-  Object? toJson() => relatedJson;
 }
 
 class GraphEnum<T> {
@@ -360,8 +430,42 @@ class GraphEnum<T> {
   T toJson() => value;
 }
 
+mixin GraphRefListMixin implements GraphRefInput {
+  Iterable<SingleRefMixin> get connect;
+
+  @override
+  Object? toJson() {
+    var byRecordTypeAndOperation = connect.groupBy((c) => c.recordType).map(
+        (recordType, listOfConnect) => MapEntry(
+            recordType, listOfConnect.groupBy((value) => value.operation)));
+    Map<String, Object?> expandOperations(String? recordType,
+        Map<GraphOperationType?, List<SingleRefMixin>> input) {
+      var expandedOperations = <String, Object?>{};
+      input.forEach((key, value) {
+        if (key != null && input.length > 0) {
+          expandedOperations[key.name] = [
+            for (var ref in value) ref.toInnerJson(),
+          ];
+        }
+      });
+      if (expandedOperations.isEmpty) {
+        return <String, Object?>{};
+      } else {
+        return recordType == null
+            ? expandedOperations
+            : {recordType.replaceAll("CreateInput", ""): expandedOperations};
+      }
+    }
+
+    return {
+      for (var recordEntry in byRecordTypeAndOperation.entries)
+        ...expandOperations(recordEntry.key, recordEntry.value),
+    };
+  }
+}
+
 class GraphRefList<E extends Entity, C extends GraphInput, U extends GraphInput,
-    G extends NullableGraphRef<E, C, U>> implements GraphRefInput {
+    G extends NullableGraphRef<E, C, U>> with GraphRefListMixin {
   final Iterable<G> _connect;
   final Iterable<String> _disconnect;
   final bool isReplace;
@@ -386,78 +490,112 @@ class GraphRefList<E extends Entity, C extends GraphInput, U extends GraphInput,
 
   Iterable<G> get connect => [..._connect];
 
-  @override
-  FieldRefInput? get relatedJson {
-    final _createList = _connect.where((c) => c._create != null);
-    final _createByType = <String?, List<C>>{};
-    final _connectByType = <String?, List<String>>{};
-    for (var item in _createList) {
-      _createByType.putIfAbsent(item._recordType, () => []).add(item.create!);
-    }
-    final _connectList = _connect.where((c) => c._linkedId != null);
-    for (var connect in _connectList) {
-      _connectByType
-          .putIfAbsent(connect._recordType, () => [])
-          .add(connect._linkedId!);
-    }
+  // @override
+  // Object? toJson() {
+  //   var byRecordTypeAndOperation = _connect.groupBy((c) => c.recordType).map(
+  //       (recordType, listOfConnect) => MapEntry(
+  //           recordType, listOfConnect.groupBy((value) => value.operation)));
+  //   Map expandOperations(
+  //       String? recordType, Map<GraphOperationType?, List<G>> input) {
+  //     var expandedOperations = {};
+  //     input.forEach((key, value) {
+  //       if (key != null && input.length > 0) {
+  //         expandedOperations[key.name] = [
+  //           for (var ref in value) ref.toInnerJson(),
+  //         ];
+  //       }
+  //     });
+  //     if (expandedOperations.isEmpty) {
+  //       return {};
+  //     } else {
+  //       return recordType == null
+  //           ? expandedOperations
+  //           : {recordType.replaceAll("CreateInput", ""): expandedOperations};
+  //     }
+  //   }
+  //
+  //   return {
+  //     for (var recordEntry in byRecordTypeAndOperation.entries)
+  //       ...expandOperations(recordEntry.key, recordEntry.value),
+  //   };
 
-    if (_connectList.isNotEmpty ||
-        _disconnect.isNotEmpty ||
-        _createList.isNotEmpty) {
-      var result = {};
-      if (isReplace) {
-        result["disconnect"] = {
-          "where": {
-            "node": {
-              "id_NOT_IN": _connectList.map((e) => e._linkedId!).toList(),
-            }
-          }
-        };
-      }
-
-      if (_connectByType.isNotEmpty) {
-        _connectByType.forEach((key, value) {
-          var connect = {
-            "where": {
-              "node": {
-                "id_IN": value,
-              }
-            }
-          };
-          if (key == null) {
-            result["connect"] = connect;
-          } else {
-            result[key] = {
-              "connect": connect,
-            };
-          }
-        });
-      }
-      if (_createList.isNotEmpty) {
-        _createByType.forEach((key, value) {
-          var create = [
-            for (var node in value)
-              {
-                "node": node.toJson(),
-              },
-          ];
-
-          if (key == null) {
-            result["create"] = create;
-          } else {
-            result.putIfAbsent(
-                key.replaceAll("CreateInput", ""), () => {})["create"] = create;
-          }
-        });
-      }
-      return result;
-    } else {
-      return null;
-    }
-  }
-
-  @override
-  Object? toJson() => relatedJson;
+  // // final _createList = _connect.where((c) => c._create != null);
+  // // final _createByType = <String?, List<C>>{};
+  // // final _connectByType = <String?, List<String>>{};
+  // for (var item in _createList) {
+  //   _createByType.putIfAbsent(item.recordType, () => []).add(item.create!);
+  // }
+  // final _connectList = _connect.where((c) => c._linkedId != null);
+  // for (var connect in _connectList) {
+  //   _connectByType
+  //       .putIfAbsent(connect.recordType, () => [])
+  //       .add(connect._linkedId!);
+  // }
+  //
+  // if (_connectList.isNotEmpty ||
+  //     _disconnect.isNotEmpty ||
+  //     _createList.isNotEmpty) {
+  //   var result = {};
+  //   if (isReplace) {
+  //     result["disconnect"] = [
+  //       {
+  //         "where": {
+  //           "node": {
+  //             "id_NOT_IN": _connectList.map((e) => e._linkedId!).toList(),
+  //           }
+  //         }
+  //       }
+  //     ];
+  //   } else if (_disconnect.isNotEmpty) {
+  //     result['disconnect'] = {
+  //       "where": {
+  //         "node": {
+  //           "id_IN": _disconnect.toList(),
+  //         }
+  //       }
+  //     };
+  //   }
+  //
+  //   if (_connectByType.isNotEmpty) {
+  //     _connectByType.forEach((key, value) {
+  //       var connect = {
+  //         "where": {
+  //           "node": {
+  //             "id_IN": value,
+  //           }
+  //         }
+  //       };
+  //       if (key == null) {
+  //         result["connect"] = connect;
+  //       } else {
+  //         result[key] = {
+  //           "connect": connect,
+  //         };
+  //       }
+  //     });
+  //   }
+  //   if (_createList.isNotEmpty) {
+  //     _createByType.forEach((key, value) {
+  //       var create = [
+  //         for (var node in value)
+  //           {
+  //             "node": node.toJson(),
+  //           },
+  //       ];
+  //
+  //       if (key == null) {
+  //         result["create"] = create;
+  //       } else {
+  //         result.putIfAbsent(
+  //             key.replaceAll("CreateInput", ""), () => {})["create"] = create;
+  //       }
+  //     });
+  //   }
+  //   return result;
+  // } else {
+  //   return null;
+  // }
+  // }
 
   GraphRefList<E, C, U, G> withConnection({E? record, String? linkedId}) {
     var id = record?.id ?? linkedId;
@@ -487,7 +625,7 @@ class ExtGraphRefList<
     E extends JoinRecordData,
     C extends GraphInput,
     U extends GraphInput,
-    G extends ExtGraphRef<R, E, C, U>> implements GraphRefInput {
+    G extends ExtGraphRef<R, E, C, U>> with GraphRefListMixin {
   final List<G> _connect;
   final List<String> _disconnect;
   final bool _isAll;
@@ -527,103 +665,100 @@ class ExtGraphRefList<
   Iterable<String> get disconnectIds => _disconnect;
 
   @override
-  FieldRefInput? get relatedJson {
-    var _byType = <String?, List<dynamic>>{};
-    for (var ref in _connect) {
-      var updates = _byType.putIfAbsent(ref._recordType, () => []);
-      if (ref._create != null) {
-        // final list = data.putIfAbsent('create', () => []) as List;
-        updates.add({
-          "create": {
-            "node": ref._create!.toJson(),
-            "edge": (ref._props!.toJson() as Object?)?.withoutKey('node'),
-          }
-        });
-      } else if (ref._linkedId != null) {
-        updates.add({
-          "connect": {
-            "where": {
-              "node": {"id": ref._linkedId!},
-            },
-            "edge": (ref._props!.toJson() as Object?)?.withoutKey('node'),
-          }
-        });
-      }
-    }
-    // final _createList = _connect.where((c) => c._create != null);
-    // final _createByType = <String?, List<C>>{};
-    // final _connectByType = <String?, List<String>>{};
-    // for (var item in _createList) {
-    //   _createByType.putIfAbsent(item._recordType, () => []).add(item._create!);
-    // }
-    // final _connectList = _connect.where((c) => c._linkedId != null);
-    // for (var connect in _connectList) {
-    //   _connectByType
-    //       .putIfAbsent(connect._recordType, () => [])
-    //       .add(connect._linkedId!);
-    // }
+  Iterable<SingleRefMixin> get connect => _connect;
 
-    // if (_connect.isNotEmpty || _disconnect.isNotEmpty) {
-    //   for (var ref in _connect) {
-    //     if (ref._create != null) {
-    //       final list = data.putIfAbsent('create', () => []) as List;
-    //       list.add({
-    //         "node": ref._create!.toJson(),
-    //         "edge": (ref._props!.toJson() as Object?)?.withoutKey('node'),
-    //       });
-    //     } else if (ref._linkedId != null) {
-    //       final list = data.putIfAbsent('connect', () => []) as List;
-    //       list.add({
-    //         "where": {
-    //           "node": {"id": ref._linkedId!},
-    //         },
-    //         "edge": (ref._props!.toJson() as Object?)?.withoutKey('node'),
-    //       });
-    //     }
-    //   }
-    // }
+  // @override
+  // FieldRefInput? get relatedJson {
+  //   var _byType = <String?, Map<String, List<Object?>>>{};
+  //   for (var ref in _connect) {
+  //     var updates = _byType.putIfAbsent(ref._recordType, () => {});
+  //     if (ref._create != null) {
+  //       // final list = data.putIfAbsent('create', () => []) as List;
+  //       updates.putIfAbsent('create', () => []).add({
+  //         "node": ref._create!.toJson(),
+  //         "edge": (ref._props!.toJson() as Object?)?.withoutKey('node'),
+  //       });
+  //     } else if (ref._linkedId != null) {
+  //       updates.putIfAbsent('connect', () => []).add({
+  //         "where": {
+  //           "node": {"id": ref._linkedId!},
+  //         },
+  //         "edge": (ref._props!.toJson() as Object?)?.withoutKey('node'),
+  //       });
+  //     }
+  //   }
+  //   // final _createList = _connect.where((c) => c._create != null);
+  //   // final _createByType = <String?, List<C>>{};
+  //   // final _connectByType = <String?, List<String>>{};
+  //   // for (var item in _createList) {
+  //   //   _createByType.putIfAbsent(item._recordType, () => []).add(item._create!);
+  //   // }
+  //   // final _connectList = _connect.where((c) => c._linkedId != null);
+  //   // for (var connect in _connectList) {
+  //   //   _connectByType
+  //   //       .putIfAbsent(connect._recordType, () => [])
+  //   //       .add(connect._linkedId!);
+  //   // }
+  //
+  //   // if (_connect.isNotEmpty || _disconnect.isNotEmpty) {
+  //   //   for (var ref in _connect) {
+  //   //     if (ref._create != null) {
+  //   //       final list = data.putIfAbsent('create', () => []) as List;
+  //   //       list.add({
+  //   //         "node": ref._create!.toJson(),
+  //   //         "edge": (ref._props!.toJson() as Object?)?.withoutKey('node'),
+  //   //       });
+  //   //     } else if (ref._linkedId != null) {
+  //   //       final list = data.putIfAbsent('connect', () => []) as List;
+  //   //       list.add({
+  //   //         "where": {
+  //   //           "node": {"id": ref._linkedId!},
+  //   //         },
+  //   //         "edge": (ref._props!.toJson() as Object?)?.withoutKey('node'),
+  //   //       });
+  //   //     }
+  //   //   }
+  //   // }
+  //
+  //   var types = _byType.keys;
+  //   if (types.length == 1 && types.first == null) {
+  //     return {
+  //       ..._byType.values.first,
+  //       if (isReplace)
+  //         "disconnect": {
+  //           "where": {
+  //             "node": {
+  //               "id_NOT_IN": _connect
+  //                   .map((e) => e._linkedId)
+  //                   .whereType<String>()
+  //                   .toList(),
+  //             }
+  //           }
+  //         },
+  //     };
+  //   } else {
+  //     if (isReplace) {
+  //       _byType.values.forEach((element) {
+  //         element['disconnect'] = [
+  //           {
+  //             "where": {
+  //               "node": {
+  //                 "id_NOT_IN": _connect
+  //                     .map((e) => e._linkedId)
+  //                     .whereType<String>()
+  //                     .toList(),
+  //               }
+  //             }
+  //           }
+  //         ];
+  //       });
+  //     }
+  //     return _byType;
+  //   }
+  // }
 
-    var types = _byType.keys;
-    if (types.length == 1 && types.first == null) {
-      return [
-        ..._byType.values.first,
-        if (isReplace)
-          {
-            "disconnect": {
-              "where": {
-                "node": {
-                  "id_NOT_IN": _connect
-                      .map((e) => e._linkedId)
-                      .whereType<String>()
-                      .toList(),
-                }
-              }
-            },
-          }
-      ];
-    } else {
-      if (isReplace) {
-        _byType.values.forEach((element) {
-          element.add({
-            "disconnect": {
-              "where": {
-                "node": {
-                  "id_NOT_IN": _connect
-                      .map((e) => e._linkedId)
-                      .whereType<String>()
-                      .toList(),
-                }
-              }
-            },
-          });
-        });
-      }
-      return _byType;
-    }
-  }
-
-  @override
-  Object? toJson() => relatedJson;
+  // @override
+  // Object? toJson() => relatedJson;
 }
 
 extension _EntityIdExt on Entity {
