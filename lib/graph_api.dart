@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dartxx/dartxx.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:inflection3/inflection3.dart';
@@ -6,6 +8,7 @@ import 'package:sunny_graphql/neo4j_graph_client.dart';
 import 'package:sunny_graphql/sunny_graphql_models.dart';
 import 'package:sunny_sdk_core/api_exports.dart';
 import 'package:sunny_sdk_core/data/record_events.dart';
+import 'package:sunny_sdk_core/model_exports.dart';
 
 import 'graph_client_config.dart';
 import 'graph_client_serialization.dart';
@@ -42,19 +45,23 @@ class EntityDeletedEvent<T extends BaseSunnyEntity> {
 
 abstract class GraphApi<T extends BaseSunnyEntity, C extends GraphInput,
     U extends GraphInput> {
-  GraphQLClient client();
+  final GraphSerializer serializer;
+  final Neo4JGraphQueryResolver resolver;
+  final GraphQLClientGetter _client;
+  final RecordEventService eventService;
+  final EntityMeta meta;
+
+  const GraphApi(
+      this._client, this.resolver, this.serializer, this.eventService,
+      {required this.meta});
+
+  GraphQLClient client() {
+    return _client();
+  }
 
   Neo4JGraphQLClient neo4JClient() {
     return Neo4JGraphQLClient(() => client(), resolver, serializer);
   }
-
-  EntityMeta get meta;
-
-  RecordEventService get eventService;
-
-  GraphSerializer get serializer;
-
-  Neo4JGraphQueryResolver get resolver;
 
   MSchemaRef get mtype => meta.mtype;
 
@@ -104,9 +111,18 @@ abstract class GraphApi<T extends BaseSunnyEntity, C extends GraphInput,
     return result.data!["delete${entityPlural}"]['nodesDeleted'] as int;
   }
 
-  Future<List<T>> list([Object filters = const {}]) async {
-    var operation = resolver.getOperation(entityName, 'list')!;
-    var result = await this.client().queryManager.mutate(MutationOptions(
+  Future<List<T>> list(
+      {Object filters = const {}, String? extraSelections}) async {
+    var operation = resolver.getOperation(
+      entityName,
+      'list',
+      extraSelections: extraSelections,
+      queryNameExtra: extraSelections == null
+          ? null
+          : md5(Uint8List.fromList(extraSelections.codeUnits)),
+    )!;
+
+    var result = await this.client().queryManager.query(QueryOptions(
           document: operation.operation,
           operationName: operation.operationName,
           variables: {"where": filters},
@@ -139,7 +155,7 @@ abstract class GraphApi<T extends BaseSunnyEntity, C extends GraphInput,
 
   Future<double> count() async {
     var operation = resolver.getOperation(entityName, 'count')!;
-    var result = await this.client().queryManager.mutate(MutationOptions(
+    var result = await this.client().queryManager.query(QueryOptions(
         document: operation.operation,
         operationName: operation.operationName,
         variables: {}));
@@ -159,6 +175,7 @@ abstract class GraphApi<T extends BaseSunnyEntity, C extends GraphInput,
     required bool isNullable,
     required bool isJoinType,
     Map<String, Object?>? where,
+    List<QueryParameter> args = const [],
     String? queryName,
   }) =>
       neo4JClient().loadRelated<T>(
@@ -170,6 +187,25 @@ abstract class GraphApi<T extends BaseSunnyEntity, C extends GraphInput,
         queryName: queryName,
         fixedWhere: where,
         entityName: this.entityName,
+        args: args,
+      );
+
+  @protected
+  Future<T> related<T>(String id, String relatedType, String field,
+          bool isNullable, bool isJoinType,
+          {Map<String, Object?>? where,
+          List<QueryParameter> args = const [],
+          String? queryName}) =>
+      neo4JClient().loadRelated<T>(
+        entityId: id,
+        fieldName: field,
+        relatedType: relatedType,
+        isJoinType: isJoinType,
+        isNullable: isNullable,
+        queryName: queryName,
+        fixedWhere: where,
+        entityName: this.entityName,
+        args: args,
       );
 
   Future<List<T>> loadRelatedList<T>({
@@ -179,6 +215,7 @@ abstract class GraphApi<T extends BaseSunnyEntity, C extends GraphInput,
     required String field,
     required bool isJoinType,
     Map<String, Object?>? where,
+    List<QueryParameter> args = const [],
     String? queryName,
   }) =>
       neo4JClient().loadRelatedList<T>(
@@ -188,5 +225,22 @@ abstract class GraphApi<T extends BaseSunnyEntity, C extends GraphInput,
         entityName: this.entityName,
         fixedWhere: where,
         isJoinType: isJoinType,
+        args: args,
+      );
+
+  @protected
+  Future<List<T>> relatedList<T>(String id, String relatedType, String field,
+          bool isNullable, bool isJoinType,
+          {Map<String, Object?>? where,
+          List<QueryParameter> args = const [],
+          String? queryName}) =>
+      neo4JClient().loadRelatedList<T>(
+        entityId: id,
+        fieldName: field,
+        relatedType: relatedType,
+        entityName: this.entityName,
+        fixedWhere: where,
+        isJoinType: isJoinType,
+        args: args,
       );
 }

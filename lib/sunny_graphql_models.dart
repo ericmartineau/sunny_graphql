@@ -6,6 +6,7 @@ import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:inflection3/inflection3.dart';
 import 'package:sunny_graphql/fragments.dart';
 import 'package:sunny_graphql/meta.dart';
+import 'package:sunny_graphql/sunny_graphql.dart';
 import 'package:sunny_sdk_core/api_exports.dart';
 import 'package:sunny_sdk_core/mverse.dart';
 
@@ -22,6 +23,7 @@ extension NonNullObjectGraphQLExt on Object {
     this.asObjectMap().remove(key);
     return this;
   }
+  
 }
 
 abstract class BaseGraphInput
@@ -62,16 +64,25 @@ mixin JoinTypeMixin<N extends BaseSunnyEntity> {
   Object? toJson();
 }
 
-abstract class BaseSunnyEntity
-    with MBaseModelMixin, DiffDelegateMixin, HasGraphMeta {
-  String? get id;
-
-  // Map<String, dynamic> toMap();
+abstract class BaseSunnyEntity extends BaseSunnyModel
+    with DiffDelegateMixin, Entity {
+  String get id;
 
   MKey? get mkey {
     return id == null ? null : MKey.fromType(mtype, id!);
   }
 
+  @override
+  dynamic get diffKey => id;
+
+  @override
+  String toString() {
+    return '$runtimeType id=$id';
+  }
+}
+
+abstract class BaseSunnyModel
+    with MBaseModelMixin, DiffDelegateMixin, HasGraphMeta {
   Map<String, Object?> toMap();
 
   Object? toJson();
@@ -82,7 +93,7 @@ abstract class BaseSunnyEntity
 
   @override
   String toString() {
-    return toMap().toString();
+    return '$runtimeType (${toMap().keys.join(', ')})';
   }
 
   @override
@@ -111,7 +122,7 @@ abstract class BaseSunnyEntity
   }
 
   @override
-  dynamic get diffKey => id;
+  dynamic get diffKey => toJson();
 
   @override
   dynamic get diffSource => toJson();
@@ -125,6 +136,24 @@ abstract class GraphQueryResolver {
   DocumentNode getOrCreateQuery(String name, String type, String gql());
   DocumentNode getOrBuildQuery(
       String name, String type, OperationDefinitionNode gql());
+  GraphOperation getOrBuildOperation(
+      String name, String type, OperationDefinitionNode gql());
+}
+
+class QueryArgument {
+  final String name;
+  final String type;
+  final bool nullable;
+  final Object? defaultValue;
+
+  const QueryArgument(this.name, this.type, this.nullable, [this.defaultValue]);
+}
+
+class QueryParameter {
+  final QueryArgument argument;
+  final Object? value;
+
+  QueryParameter(this.argument, this.value);
 }
 
 class Neo4JGraphQueryResolver
@@ -133,8 +162,9 @@ class Neo4JGraphQueryResolver
   final _queries = <String, GraphOperation>{};
 
   @override
-  GraphOperation? getOperation(String entityName, String op) {
-    var queryName = '${op.uncapitalize()}${entityName}';
+  GraphOperation? getOperation(String entityName, String op,
+      {String? extraSelections, String? queryNameExtra}) {
+    var queryName = '${op.uncapitalize()}${entityName}${queryNameExtra ?? ''}';
     return _queries.putIfAbsent(queryName, () {
       switch (op) {
         case 'create':
@@ -144,7 +174,8 @@ class Neo4JGraphQueryResolver
         case 'delete':
           return _buildDeleteQuery(entityName, queryName);
         case 'list':
-          return buildListQuery(entityName, queryName);
+          return buildListQuery(entityName, queryName,
+              extraSelection: extraSelections);
         case 'load':
           return _buildLoadQuery(entityName, queryName);
         case 'count':
@@ -204,6 +235,7 @@ class Neo4JGraphQueryResolver
     required String fieldName,
     required String queryName,
     Map<String, Object?>? where,
+    List<QueryParameter> args = const [],
   }) {
     final rootWhere = {
       'id': VariableNode(name: NameNode(value: 'id')),
@@ -221,7 +253,17 @@ class Neo4JGraphQueryResolver
             name: NameNode(value: "ID"),
             isNonNull: true,
           ),
-        )
+        ),
+        for (var arg in args)
+          VariableDefinitionNode(
+              defaultValue: arg.argument.defaultValue == null
+                  ? DefaultValueNode(value: null)
+                  : DefaultValueNode(
+                      value: arg.argument.defaultValue!.toValueNode()),
+              variable: VariableNode(name: NameNode(value: arg.argument.name)),
+              type: NamedTypeNode(
+                  name: NameNode(value: arg.argument.type),
+                  isNonNull: arg.argument.nullable == false)),
       ],
       selectionSet: SelectionSetNode(
         selections: [
@@ -242,6 +284,12 @@ class Neo4JGraphQueryResolver
                         name: NameNode(value: "where"),
                         value: where.toValueNode(),
                       ),
+                    for (var arg in args)
+                      ArgumentNode(
+                        name: NameNode(value: arg.argument.name),
+                        value: VariableNode(
+                            name: NameNode(value: arg.argument.name)),
+                      ),
                   ],
                   selectionSet: SelectionSetNode(
                     selections: [
@@ -258,12 +306,14 @@ class Neo4JGraphQueryResolver
     );
   }
 
-  GraphOperation buildListQuery(String entityName, String queryName) {
+  GraphOperation buildListQuery(String entityName, String queryName,
+      {String? extraSelection}) {
     final plural = pluralize(entityName);
     return GraphOperation(queryName, GraphOperations.list, this.operation("""
     query $queryName(\$where: ${entityName}Where!) {
       ${plural.uncapitalize()}(where: \$where) {
         ...${entityName}Fragment
+        ${extraSelection ?? ''}
       }
     }
     """));
@@ -321,10 +371,16 @@ class Neo4JGraphQueryResolver
   @override
   DocumentNode getOrBuildQuery(String name, String type,
       OperationDefinitionNode Function() generateQuery) {
+    return getOrBuildOperation(name, type, generateQuery).operation;
+  }
+
+  @override
+  GraphOperation getOrBuildOperation(String name, String type,
+      OperationDefinitionNode Function() generateQuery) {
     return _queries.putIfAbsent(name, () {
       final document = this.operationFromNode(generateQuery());
       return GraphOperation(name, type, document);
-    }).operation;
+    });
   }
 }
 

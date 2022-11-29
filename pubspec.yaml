@@ -3,22 +3,21 @@ version: 1.14.0
 homepage: https://github.com/ericmartineau/sunny_graphql
 description: GraphQL generation and query base library for sunny
 environment: 
-  sdk: '>=2.14.0 <3.0.0'
-  flutter: '>=1.17.0'
+  sdk: '>=2.17.0 <3.0.0'
 dependencies: 
   logging: ^1.0.2
-  equatable: ^2.0.3
+  equatable: ^2.0.5
   pedantic: ^1.11.1
-  uri: ^1.0.0
+  graphql_flutter: ^5.1.1-beta.4
+  gql: ^0.14.0
   inflection3: ^0.5.3+2
-  graphql_flutter: ^5.0.0
-  gql: ^0.13.0
+  uri: ^1.0.0
   collection_diff: 
-    path: /Users/ericm/sunny/player_rank/packages/collection_diff
+    path: /Users/ericm/sunny/trippi_plugins/collection_diff
   sunny_sdk_core: 
-    path: /Users/ericm/sunny/player_rank/packages/sunny_sdk_core
+    path: /Users/ericm/sunny/trippi_plugins/sunny_sdk_core
   dartxx: 
-    path: /Users/ericm/sunny/player_rank/packages/dartxx
+    path: /Users/ericm/sunny/trippi_plugins/dartxx
   flutter: 
     sdk: flutter
 dev_dependencies: 

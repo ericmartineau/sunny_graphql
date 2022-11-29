@@ -1,4 +1,5 @@
 import 'package:gql/ast.dart';
+import 'package:gql/language.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:inflection3/inflection3.dart';
 import 'package:sunny_graphql/graph_client_serialization.dart';
@@ -26,6 +27,7 @@ class Neo4JGraphQLClient {
     required bool isNullable,
     required bool isJoinType,
     Map<String, Object?>? fixedWhere,
+    List<QueryParameter> args = const [],
   }) async {
     final artifactPlural = pluralize(entityName.uncapitalize());
     DocumentNode? gqlQuery;
@@ -41,6 +43,7 @@ class Neo4JGraphQLClient {
                 fieldName: fieldName,
                 queryName: queryName!,
                 where: fixedWhere,
+                args: args,
               ));
 
       var result = await this._client().query(
@@ -49,6 +52,7 @@ class Neo4JGraphQLClient {
               operationName: queryName,
               variables: {
                 "id": entityId,
+                for (var arg in args) arg.argument.name: arg.value,
               },
               cacheRereadPolicy: CacheRereadPolicy.ignoreAll,
               fetchPolicy: FetchPolicy.noCache,
@@ -56,6 +60,7 @@ class Neo4JGraphQLClient {
           );
 
       if (result.hasException) {
+        var queryValue = printNode(gqlQuery);
         final translated = GraphClientConfig.translateException(
             GraphOperation(queryName, GraphOperations.listRelated, gqlQuery),
             {
@@ -65,10 +70,12 @@ class Neo4JGraphQLClient {
               "relatedType": relatedType,
             },
             result.exception!);
+
         throw translated;
       }
 
-      var raw = GraphClientConfig.getDeep(result.data, "${artifactPlural}", 0, fieldName);
+      var raw = GraphClientConfig.getDeep(
+          result.data, "${artifactPlural}", 0, fieldName);
       if (raw != null && isJoinType) {
         raw = raw["edges"];
       }
@@ -100,10 +107,12 @@ class Neo4JGraphQLClient {
         ));
 
     if (result.hasException) {
-      throw GraphClientConfig.translateException(operation, input, result.exception!);
+      throw GraphClientConfig.translateException(
+          operation, input, result.exception!);
     }
 
-    var rawData = result.data!["create${entityName.plural}"]["${entityName.artifactPlural}"][0];
+    var rawData = result.data!["create${entityName.plural}"]
+        ["${entityName.artifactPlural}"][0];
     assert(rawData is Map, "Result of create$entityName must be a Map");
     return (rawData as Map).cast();
   }
@@ -125,7 +134,8 @@ class Neo4JGraphQLClient {
     required String id,
     required GraphObject update,
   }) async {
-    final res = await updateEntityJson(entityName: entityName, id: id, update: update);
+    final res =
+        await updateEntityJson(entityName: entityName, id: id, update: update);
     return this._serializer.read<T>(
           res,
           typeName: entityName,
@@ -147,11 +157,13 @@ class Neo4JGraphQLClient {
         ));
 
     if (result.hasException) {
-      throw GraphClientConfig.translateException(operation, variables, result.exception!);
+      throw GraphClientConfig.translateException(
+          operation, variables, result.exception!);
     }
 
     try {
-      var rawData = result.data!["update${entityName.plural}"]["${entityName.artifactPlural}"][0];
+      var rawData = result.data!["update${entityName.plural}"]
+          ["${entityName.artifactPlural}"][0];
       assert(rawData is Map, "Result of create$entityName must be a Map");
       return (rawData as Map).cast();
     } catch (e) {
@@ -159,28 +171,30 @@ class Neo4JGraphQLClient {
       print(e);
       rethrow;
     }
-
-
   }
 
-  Future<List<T>> loadRelatedList<T>(
-      {required String entityName,
-      required String entityId,
-      required String fieldName,
-      required String relatedType,
-      String? queryName,
-      bool isNullable = false,
-      bool isJoinType = false,
-      Map<String, Object?>? fixedWhere}) async {
+  Future<List<T>> loadRelatedList<T>({
+    required String entityName,
+    required String entityId,
+    required String fieldName,
+    required String relatedType,
+    String? queryName,
+    bool isNullable = false,
+    bool isJoinType = false,
+    Map<String, Object?>? fixedWhere,
+    List<QueryParameter> args = const [],
+  }) async {
     final raw = await this.loadRelatedJson(
-        entityName: entityName,
-        entityId: entityId,
-        fieldName: fieldName,
-        relatedType: relatedType,
-        fixedWhere: fixedWhere,
-        queryName: queryName,
-        isNullable: isNullable,
-        isJoinType: isJoinType);
+      entityName: entityName,
+      entityId: entityId,
+      fieldName: fieldName,
+      relatedType: relatedType,
+      fixedWhere: fixedWhere,
+      queryName: queryName,
+      isNullable: isNullable,
+      isJoinType: isJoinType,
+      args: args,
+    );
     return this._serializer.readList<T>(
           raw,
           typeName: relatedType,
@@ -188,13 +202,15 @@ class Neo4JGraphQLClient {
         );
   }
 
-  Future<List<JoinRecord<T, Entity, D>>> loadJoinList<T extends Entity, D extends JoinRecordData>({
+  Future<List<JoinRecord<T, Entity, D>>>
+      loadJoinList<T extends Entity, D extends JoinRecordData>({
     required String entityName,
     required String entityId,
     required String fieldName,
     String? queryName,
     bool isNullable = false,
     Map<String, Object?>? fixedWhere,
+    List<QueryParameter> args = const [],
   }) async {
     var relatedType = "${entityName}${singularize(fieldName).capitalize()}";
     final raw = await this.loadRelatedJson(
@@ -203,6 +219,7 @@ class Neo4JGraphQLClient {
         fieldName: "${fieldName}Connection",
         relatedType: relatedType,
         fixedWhere: fixedWhere,
+        args: args,
         queryName: queryName,
         isNullable: isNullable,
         isJoinType: true);
@@ -213,7 +230,8 @@ class Neo4JGraphQLClient {
         );
   }
 
-  Future<JoinRecord<T, Entity, D>?> loadJoin<T extends Entity, D extends JoinRecordData>({
+  Future<JoinRecord<T, Entity, D>?>
+      loadJoin<T extends Entity, D extends JoinRecordData>({
     required String entityName,
     required String entityId,
     required String fieldName,
@@ -221,6 +239,7 @@ class Neo4JGraphQLClient {
     bool isNullable = false,
     bool isJoinType = false,
     Map<String, Object?>? fixedWhere,
+    List<QueryParameter> args = const [],
   }) async {
     var relatedType = "${entityName}${singularize(fieldName).capitalize()}";
     final raw = await this.loadRelatedJson(
@@ -231,6 +250,7 @@ class Neo4JGraphQLClient {
         fixedWhere: fixedWhere,
         queryName: queryName,
         isNullable: isNullable,
+        args: args,
         isJoinType: isJoinType);
     return this._serializer.read<JoinRecord<T, Entity, D>>(
           raw,
@@ -239,15 +259,17 @@ class Neo4JGraphQLClient {
         );
   }
 
-  Future<T> loadRelated<T>(
-      {required String entityName,
-      required String entityId,
-      required String fieldName,
-      required String relatedType,
-      String? queryName,
-      bool? isNullable,
-      bool isJoinType = false,
-      Map<String, Object?>? fixedWhere}) async {
+  Future<T> loadRelated<T>({
+    required String entityName,
+    required String entityId,
+    required String fieldName,
+    required String relatedType,
+    String? queryName,
+    bool? isNullable,
+    bool isJoinType = false,
+    Map<String, Object?>? fixedWhere,
+    List<QueryParameter> args = const [],
+  }) async {
     isNullable ??= "$T".endsWith("?");
     final raw = await this.loadRelatedJson(
         entityName: entityName,
@@ -255,6 +277,7 @@ class Neo4JGraphQLClient {
         fieldName: fieldName,
         relatedType: relatedType,
         fixedWhere: fixedWhere,
+        args: args,
         queryName: queryName,
         isNullable: isNullable,
         isJoinType: isJoinType);
@@ -267,10 +290,13 @@ class Neo4JGraphQLClient {
 
   Future<T?> load<T>({required String entityName, required String id}) async {
     final raw = await loadJson(entityName: entityName, id: id);
-    return this._serializer.read<T?>(raw, typeName: entityName, isNullable: true);
+    return this
+        ._serializer
+        .read<T?>(raw, typeName: entityName, isNullable: true);
   }
 
-  Future<Object?> loadJson({required String entityName, required String id}) async {
+  Future<Object?> loadJson(
+      {required String entityName, required String id}) async {
     var operation = _resolver.getOperation(entityName, 'load')!;
     var result = await this._client().mutate(MutationOptions(
           document: operation.operation,
@@ -279,7 +305,8 @@ class Neo4JGraphQLClient {
         ));
 
     if (result.hasException) {
-      throw GraphClientConfig.translateException(operation, id, result.exception!);
+      throw GraphClientConfig.translateException(
+          operation, id, result.exception!);
     }
     var list = result.data!["${entityName.artifactPlural}"] as List?;
     return list?.firstOr();
