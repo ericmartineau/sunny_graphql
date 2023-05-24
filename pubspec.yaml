@@ -5,19 +5,18 @@ description: GraphQL generation and query base library for sunny
 environment: 
   sdk: '>=2.17.0 <3.0.0'
 dependencies: 
-  logging: ^1.0.2
+  logging: ^1.1.1
   equatable: ^2.0.5
   pedantic: ^1.11.1
   inflection3: ^0.5.3+2
-  graphql_flutter: ^5.1.1-beta.4
-  gql: ^0.13.0
-  uri:
-    path: /Users/ericm/sunny/local_plugins/uri.dart
-  sunny_sdk_core:
+  graphql_flutter: ^5.1.2
+  gql: ^0.14.1-alpha+1672756470474
+  uri: ^1.0.0
+  sunny_sdk_core: 
     path: /Users/ericm/reliveit/checkout/SunnyApp/sunny_sdk_core
-  collection_diff:
+  collection_diff: 
     path: /Users/ericm/reliveit/checkout/SunnyApp/collection_diff
-  dartxx:
+  dartxx: 
     path: /Users/ericm/reliveit/checkout/ericmartineau/dartxx
   flutter: 
     sdk: flutter

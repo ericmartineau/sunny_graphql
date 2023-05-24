@@ -52,7 +52,7 @@ class Neo4JGraphQLClient {
               operationName: queryName,
               variables: {
                 "id": entityId,
-                for (var arg in args) arg.argument.name: arg.value,
+                for (var arg in args) arg.argument.name: (arg.value ?? arg.argument.defaultValue),
               },
               cacheRereadPolicy: CacheRereadPolicy.ignoreAll,
               fetchPolicy: FetchPolicy.noCache,
